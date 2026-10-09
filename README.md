@@ -1,4 +1,4 @@
-# Everest SFA — Phase 1 and Phase 2 (web part)
+# Everest SFA — Phases 1 to 3 (web)
 
 Sales force monitoring and control system for Everest Parenterals Pvt. Ltd.
 This is Phase 1: the foundation that every later phase builds on.
@@ -37,7 +37,24 @@ Alert rules are checked whenever someone has Team today or Alerts open (at most 
 
 Still to come in Phase 2: the Android app (background tracking, mock-location detection, push notifications).
 
-Not built yet: booklets, sales orders, credit control, collections, expenses, targets, reports. They are listed in the left menu under "Coming next".
+## What Phase 3 adds
+
+| Area | What works now |
+| --- | --- |
+| Booklet | A request to sell named products to one customer below the trade rate: ask rate, bonus (buy + free), discount %. Net rate and the gap below base rate are calculated; a reason is needed for every line below base |
+| Approval chain | The largest gap decides the final approver: up to the ASM band ends at ASM, up to the RSM band at RSM, above that at GM (bands are in Settings). Approve, send back or reject with remarks; nobody approves their own booklet; every step is in the history |
+| Credit position | Limit, outstanding with aging, approved-but-not-dispatched value, available credit and instruments are shown on every booklet and order |
+| Sales order | Standard rates, or rates locked to one accepted booklet with quantity limited to the booklet balance. Marked Within limit or Over limit |
+| Credit Control | Order queue; an over-limit order can be approved only with a remark naming what covers it. Customer limits, instruments (bank guarantee, LC, cheque, director approval), cancel an accepted booklet |
+| Outstanding upload | Excel/CSV of customer-wise outstanding with aging buckets, with a per-row error report and upload history. This replaces a link to accounting software |
+| Dispatch | Approved orders, daily Excel export (one row per order line) for manual entry, mark dispatched with invoice number |
+| New alerts | Approval waiting longer than the set hours; instrument expiring within the set days |
+
+Numbers look like `BK-8384-0001` and `SO-8384-0001`, where 8384 is the Nepali fiscal year 2083/84. The year switch is taken as 16 July; adjust `fyLabel` in `lib/sales.ts` if your books switch on a different day.
+
+Not in this phase: a printable order PDF, and editing a sent-back booklet (the user creates a new one).
+
+Not built yet: collections, claims, expenses, secondary sales, tenders, targets, incentive, scorecard, reports. They are listed in the left menu under "Coming next".
 
 ## Run it on your own computer (for a developer)
 
@@ -129,6 +146,9 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 | `POST /api/field/checkin`, `POST /api/field/checkout` | Start and end the day (`lat`, `lng`, `accuracy`, `projection` / `actual`) |
 | `POST /api/field/visit/start`, `POST /api/field/visit/end` | Customer visit |
 | `GET /api/team/today?day=`, `GET /api/visits?from=&to=` | Manager views |
+| `GET /api/booklets?box=mine|inbox|all|usable&customer=`, `POST /api/booklets`, `GET/POST /api/booklets/{id}` | Booklets: list, create, detail, act (`approve`, `back`, `reject`, `cancel`) |
+| `GET /api/orders?box=mine|queue|approved|all`, `POST /api/orders`, `GET/POST /api/orders/{id}`, `GET /api/orders/export?day=` | Sales orders: list, create, detail, act (`approve`, `reject`, `withdraw`, `dispatch`), daily export |
+| `GET /api/credit?customer=`, `GET /api/credit?q=`, `PUT /api/credit`, `POST /api/credit`, `GET/POST /api/credit/outstanding` | Credit position, customer list, set limit, instruments, outstanding upload |
 | `GET /api/alerts?open=1`, `POST /api/alerts/ack`, `GET/PUT /api/alerts/rules` | Alerts |
 
 ## How the code is organised

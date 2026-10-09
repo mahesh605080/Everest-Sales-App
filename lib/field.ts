@@ -181,6 +181,21 @@ export async function runAlerts(force = false) {
       where x.last < now() - ($1::int * interval '1 minute')
      on conflict(key) do nothing`, [Math.max(5, Math.round(Number(rules.idle.threshold) || 120))]);
 
+  if (rules.approval_wait?.enabled) {
+    const h = Math.max(1, Math.round(Number(rules.approval_wait.threshold) || 24));
+    await q(`insert into alerts(rule,severity,user_id,customer_id,message,day,key)
+             select 'approval_wait','info',b.user_id,b.customer_id,'Booklet '||b.no||' has waited '||floor(extract(epoch from now()-b.updated_at)/3600)::int||' hours for '||upper(b.level)||' approval.',${TODAY},'approval_wait:b:'||b.id||':'||b.level
+               from booklets b where b.status='Pending' and b.updated_at < now() - ($1::int * interval '1 hour') on conflict(key) do nothing`, [h]);
+    await q(`insert into alerts(rule,severity,user_id,customer_id,message,day,key)
+             select 'approval_wait','info',o.user_id,o.customer_id,'Sales order '||o.no||' has waited '||floor(extract(epoch from now()-o.created_at)/3600)::int||' hours for Credit Control.',${TODAY},'approval_wait:o:'||o.id
+               from sales_orders o where o.status='Pending' and o.created_at < now() - ($1::int * interval '1 hour') on conflict(key) do nothing`, [h]);
+  }
+  if (rules.instrument_expiry?.enabled) await q(
+    `insert into alerts(rule,severity,user_id,customer_id,message,day,key)
+     select 'instrument_expiry','warn',ca.user_id,f.customer_id,f.type||' '||coalesce(f.ref_no,'')||' of '||c.name||' (Rs '||to_char(f.amount,'FM99,99,99,99,990')||') '||case when f.expiry_date < ${TODAY} then 'expired on ' else 'expires on ' end||f.expiry_date||'.',${TODAY},'instrument_expiry:'||f.id||':'||f.expiry_date
+       from financial_instruments f join customers c on c.id=f.customer_id left join customer_assignments ca on ca.customer_id=c.id and ca.to_date is null
+      where f.status='Active' and f.expiry_date <= ${TODAY} + $1::int on conflict(key) do nothing`, [Math.max(1, Math.round(Number(rules.instrument_expiry.threshold) || 30))]);
+
   // One summary per person per week, not one alert per customer.
   if (rules.coverage?.enabled) await q(
     `insert into alerts(rule,severity,user_id,message,day,key)
@@ -194,7 +209,7 @@ export async function runAlerts(force = false) {
 
 export async function listAlerts(s: Session, open: boolean) {
   await runAlerts();
-  const params: any[] = []; const scope = teamScope(s, params);
+  const params: any[] = []; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait')` : teamScope(s, params);
   return q<any>(
     `select a.id,a.rule,a.severity,a.message,a.day,a.at,a.ack_at,u.name as person,u.code as person_code,ar.name as area,k.name as ack_by
        from alerts a left join users u on u.id=a.user_id left join areas ar on ar.id=u.area_id left join users k on k.id=a.ack_by
@@ -203,7 +218,7 @@ export async function listAlerts(s: Session, open: boolean) {
 }
 
 export async function ackAlert(s: Session, id: number) {
-  const params: any[] = [id]; const scope = teamScope(s, params);
+  const params: any[] = [id]; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait')` : teamScope(s, params);
   const ok = await q1<any>(`select a.id from alerts a left join users u on u.id=a.user_id where a.id=$1 and a.ack_at is null${scope}`, params);
   if (!ok) throw new HttpError(404, 'This alert is already acknowledged or is outside your team.');
   await q('update alerts set ack_by=$1, ack_at=now() where id=$2', [s.id, id]);

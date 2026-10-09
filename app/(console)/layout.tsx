@@ -23,7 +23,11 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'team.view')) field.push({ href: '/team', label: 'Team today' }, { href: '/visits', label: 'Visit report' });
   if (can(s, 'alerts.view')) field.push({ href: '/alerts', label: 'Alerts' });
   overview.push({ href: '/notices', label: 'Notices' });
-  const nav = [{ group: 'Overview', items: overview }, { group: 'Field', items: field }, { group: 'Masters', items: masters }, { group: 'Administration', items: admin }].filter(g => g.items.length);
+  const sales = [] as { href: string; label: string }[];
+  if (can(s, 'booklets.create') || can(s, 'booklets.approve') || can(s, 'sales.view')) sales.push({ href: '/booklets', label: 'Booklets' });
+  if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/orders', label: 'Sales orders' });
+  if (can(s, 'credit.manage') || can(s, 'dispatch.manage')) sales.push({ href: '/credit', label: 'Credit control' });
+  const nav = [{ group: 'Overview', items: overview }, { group: 'Field', items: field }, { group: 'Sales', items: sales }, { group: 'Masters', items: masters }, { group: 'Administration', items: admin }].filter(g => g.items.length);
   const titles: Record<string, [string, string]> = {
     '/dashboard': ['Dashboard', 'Master data health and recent changes'],
     '/map': ['Map', 'Customers and the last known position of the field team'],
@@ -34,6 +38,9 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/alerts': ['Alerts', 'What the system caught on its own, and the rules behind it'],
     '/plan': ['Tour plan', 'Plan next month\'s visits, get them approved, and compare with what was done'],
     '/notices': ['Notices', 'Messages from head office'],
+    '/booklets': ['Booklets', 'Special rate and scheme requests, with multi-level approval'],
+    '/orders': ['Sales orders', 'Orders sent to Credit Control, with the credit check result'],
+    '/credit': ['Credit control', 'Order approval, limits, instruments, outstanding upload and dispatch'],
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],

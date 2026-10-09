@@ -9,11 +9,11 @@ import { ALL_PERMS } from '../lib/perm';
 const views = ALL_PERMS.filter(p => p.endsWith('.view'));
 const ROLES: [string, string, number, string[]][] = [
   ['admin', 'Admin', 5, ALL_PERMS],
-  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage']],
-  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run']],
-  ['rsm', 'Regional Sales Manager', 3, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'regions.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.approve']],
-  ['asm', 'Area Sales Manager', 2, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.use', 'plan.approve']],
-  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use', 'plan.use']],
+  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage', 'booklets.approve']],
+  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run', 'sales.view', 'credit.manage', 'dispatch.manage', 'alerts.view']],
+  ['rsm', 'Regional Sales Manager', 3, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'regions.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.approve', 'booklets.approve', 'sales.view']],
+  ['asm', 'Area Sales Manager', 2, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.use', 'plan.approve', 'booklets.create', 'booklets.approve', 'orders.create', 'sales.view']],
+  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use', 'plan.use', 'booklets.create', 'orders.create']],
 ];
 const SETTINGS: [string, string, string, string][] = [
   ['geo_fence_radius_m', '200', 'Geo-fence radius for a valid customer visit', 'metres'],
