@@ -8,7 +8,7 @@ import { can, Session } from './perm';
 import { REQ, ReqDef, RField } from './reqdefs';
 import { managerOf, notify, withPerm } from './notify';
 import { filterSql, ListFilter } from './filters';
-import { nonReturnableSale } from './inventory';
+import { checkClaim } from './returns';
 
 export function reqDef(key: string): ReqDef {
   const d = REQ[key]; if (!d) throw new HttpError(404, 'Unknown list.'); return d;
@@ -46,10 +46,7 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
   if (def.key === 'competitor') v.day = today;
   if (def.key === 'claims') {
     if (v.amount <= 0) throw new HttpError(422, 'Claim amount must be more than zero.'); v.day = today;
-    if (v.batch_no && ['Expired stock', 'Near expiry'].includes(v.type)) {
-      const sale = await nonReturnableSale(v.customer_id, v.batch_no);
-      if (sale) throw new HttpError(422, `Batch ${v.batch_no} was sold to this customer on ${sale.no} as a non-returnable near-expiry lot, so an expiry claim cannot be raised for it.`);
-    }
+    v.flags = JSON.stringify(await checkClaim(v));
   }
   const keys = Object.keys(v);
   const row = await q1<any>(`insert into ${def.table}(user_id,${keys.map(k => `"${k}"`).join(',')}) values($1,${keys.map((_, i) => '$' + (i + 2)).join(',')}) returning id`, [s.id, ...keys.map(k => v[k])]);
@@ -57,6 +54,7 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
   await audit(s, 'create', def.key, row!.id, null, v, ip);
   const first = def.steps[0];
   if (first) await notify(first.scope === 'team' ? [await managerOf(s.id)] : await withPerm(first.perm), `New ${def.one} from ${s.name}`, v.amount != null ? `Rs ${v.amount}` : null, `/r/${def.key}`);
+  if (def.key === 'claims' && String(v.flags).includes('over_cap')) await notify((await q<any>(`select u.id from users u join roles r on r.id=u.role_id where u.active and r.key='gm'`)).map(g => g.id), `Claim over the yearly returns limit from ${s.name}`, `Rs ${v.amount}`, '/r/claims');
   return { id: row!.id };
 }
 
@@ -87,6 +85,7 @@ export async function listReq(def: ReqDef, s: Session, box: string, f?: ListFilt
     r.trail = trails.filter(t => t.doc_id === r.id);
     const st = def.steps.find(x => x.from === r.status && can(s, x.perm));
     r.next = st && (st.scope === 'all' || r.user_id !== s.id) ? st.label : null;
+    if (def.key === 'claims' && r.status === 'Submitted' && s.level < 4 && Array.isArray(r.flags) && r.flags.some((f: any) => f.k === 'over_cap')) r.next = null; // only the General Manager decides these
   }
   return rows;
 }
@@ -107,6 +106,10 @@ export async function actReq(def: ReqDef, s: Session, id: number, b: any, ip: st
     if (row.user_id === s.id) throw new HttpError(403, 'You cannot decide your own request.');
     const p: any[] = [row.user_id]; const scope = teamScope(s, p);
     if (!(await q1(`select 1 from users u where u.id=$1${scope}`, p))) throw new HttpError(403, 'This person is not in your team.');
+  }
+  if (def.key === 'claims' && row.status === 'Submitted' && b.action === 'next' && Array.isArray(row.flags) && row.flags.length) {
+    if (row.flags.some((f: any) => f.k === 'over_cap') && s.level < 4) throw new HttpError(403, 'This claim is over the customer\'s yearly returns limit. Only the General Manager can approve it.');
+    if (!remarks) throw new HttpError(422, 'The policy check raised points on this claim. Write in the remarks why it is being approved.');
   }
   let status: string, action: string;
   if (b.action === 'reject') { if (!remarks) throw new HttpError(422, 'Remarks are needed to reject.'); status = 'Rejected'; action = 'Rejected'; }

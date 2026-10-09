@@ -135,6 +135,13 @@ The system's first job is to get more orders in with less effort. These screens 
 - **Price lists** (Sales → Price lists) — a rate per product for a customer type (hospital list, institution list) or for one customer (rate contract). Order: own contract rate, then type list, then trade rate. Orders pick it up automatically and record where the rate came from.
 - **Scheme results** (Performance) — orders, boxes, free boxes, billed value, what was given away (discount plus free goods at trade rate) and the change in sale against the same number of days before the scheme.
 
+## Returns policy and expiry loss
+
+- **Policy check on every claim** — an expiry claim needs product, boxes, batch and expiry date; it is refused when the stock is still far from expiry, expired too long ago, worth more than the boxes at trade rate, or was sold as a non-returnable lot.
+- **Flags for the approver** — batch not traced to a dispatch for that customer, expiry date different from the company record, late breakage, and "over the yearly limit" (expiry returns above a % of the customer's 12-month purchases). A flagged claim needs a remark to approve; an over-limit claim only the General Manager can approve.
+- **Loss and returns tab** (Stock and expiry) — stock expired in the godown, expiry returns by month, customers and products returning the most, and how much near-expiry selling recovered.
+- Settings: `return_before_expiry_months`, `return_after_expiry_months`, `return_cap_pct`, `breakage_claim_days`.
+
 ## Experience upgrades
 
 | Area | What works now |

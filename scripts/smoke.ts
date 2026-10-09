@@ -173,9 +173,25 @@ async function main() {
     const plain = (await so.post('/api/orders', { customer_id: c1.id, items: [{ product_id: ns.id, qty: 160 }] })).data, pd = (await so.get(`/api/orders/${plain.id}`)).data;
     ok('an ordinary order is planned earliest-expiry-first', pd.items[0].fefo?.plan[0].batch_no === 'NS-A' && pd.items[0].fefo.plan[0].qty === 150 && pd.items[0].fefo.plan[1].batch_no === 'NS-B', pd.items[0].fefo);
     await cc.post(`/api/orders/${lo.id}`, { action: 'approve', remarks: 'Near-expiry lot' });
-    const claim = (batch: string) => so.post('/api/req/claims', { customer_id: c1.id, type: 'Near expiry', product_id: ns.id, qty: 5, batch_no: batch, amount: 5000, remarks: 'Return of short-dated stock' });
+    const claim = (batch: string, x: any = {}) => so.post('/api/req/claims', { customer_id: c1.id, type: 'Near expiry', product_id: ns.id, qty: 5, batch_no: batch, expiry_date: day(60), amount: 5000, remarks: 'Return of short-dated stock', ...x });
     ok('a non-returnable lot cannot come back as an expiry claim', (await claim('ns-a')).status === 422);
-    ok('a claim for another batch is accepted', (await claim('NS-OTHER')).status === 200);
+    // returns policy
+    ok('an expiry claim needs the batch and expiry date', (await claim('NS-OTHER', { expiry_date: '' })).status === 422);
+    ok('stock far from expiry cannot be returned yet', (await claim('NS-OTHER', { expiry_date: day(200) })).status === 422);
+    ok('stock expired long ago cannot be returned', (await claim('NS-OTHER', { type: 'Expired stock', expiry_date: day(-300) })).status === 422);
+    ok('a claim cannot be worth more than the stock', (await claim('NS-OTHER', { qty: 1 })).status === 422);
+    const cl = await claim('NS-OTHER'), mineC = (await so.get('/api/req/claims?box=mine')).data.rows.find((r: any) => r.id === cl.data.id);
+    ok('a claim inside the window is accepted and carries the policy flags', cl.status === 200 && mineC.flags.some((f: any) => f.k === 'over_cap') && mineC.flags.some((f: any) => f.k === 'batch_not_traced'), mineC?.flags);
+    ok('a claim over the yearly limit is not for the ASM', (await asm.post(`/api/req/claims/${cl.data.id}`, { action: 'next' })).status === 403);
+    ok('a flagged claim needs a remark to approve', (await gm.post(`/api/req/claims/${cl.data.id}`, { action: 'next' })).status === 422);
+    ok('GM approves the flagged claim with a remark', (await gm.post(`/api/req/claims/${cl.data.id}`, { action: 'next', remarks: 'Invoice checked, one-time exception' })).data.status === 'Approved');
+    const mm = await claim('NS-B', { qty: 1, amount: 1000 }), mmr = (await so.get('/api/req/claims?box=mine')).data.rows.find((r: any) => r.id === mm.data.id);
+    ok('an expiry date that differs from the company record is flagged', mmr?.flags.some((f: any) => f.k === 'expiry_mismatch'), mmr?.flags);
+    const al = (await so.get(`/api/expiry?allowance=${c1.id}`)).data;
+    ok('the returns allowance of a customer adds up', al.cap_pct === 2 && al.returned === 6000 && Math.abs(al.allowed - al.bought * 0.02) < 0.01 && al.left === 0, al);
+    const loss = (await gm.get('/api/expiry?loss=1')).data;
+    ok('the loss screen totals returns, godown expiry and near-expiry recovery', loss.returns.total === 6000 && loss.godown.expired_boxes === 15 && loss.lots.boxes === 50 && loss.byCustomer[0].over === true, loss);
+    ok('the loss screen is not open to a sales officer', (await so.get('/api/expiry?loss=1')).status === 403);
     ok('offer slabs are validated', (await gm.put('/api/expiry/offers', { slabs: [{ months_from: 0, months_to: 4, discount_pct: 30 }, { months_from: 3, months_to: 6, discount_pct: 15 }] })).status === 422 && (await so.put('/api/expiry/offers', { slabs: [] })).status === 403);
   }
 

@@ -98,13 +98,43 @@ function Slabs({ canManage }: { canManage: boolean }) {
   </section>;
 }
 
-export default function Expiry({ canManage, canOrder }: { canManage: boolean; canOrder: boolean }) {
-  const tabs = [['pos', 'Expiry position'], ['slabs', 'Offer slabs'], canManage && ['upload', 'Upload stock']].filter(Boolean) as string[][];
+function Loss() {
+  const [d, setD] = useState<any>(null); const [err, setErr] = useState('');
+  useEffect(() => { call('/api/expiry?loss=1').then(setD).catch(e => setErr(e.message)); }, []);
+  if (err) return <div className="errbox" role="alert">{err}</div>;
+  if (!d) return <section className="card"><p className="sub">Adding it up…</p></section>;
+  const mx = Math.max(1, ...d.months.map((m: any) => m.amount)), r = d.returns;
+  return <>
+    <div className="g kpi">
+      <div className="card"><div className="lab">Expired in the godown</div><div className="big" style={{ color: d.godown.expired_value > 0 ? 'var(--crit)' : undefined }}>{sh(d.godown.expired_value)}</div><div className="ctx">{d.godown.expired_boxes} boxes already lost</div></div>
+      <div className="card"><div className="lab">Expiry returns, 12 months</div><div className="big">{sh(r.total)}</div><div className="ctx">{r.count} claims · {r.pct_of_sales == null ? 'no sales to compare' : `${r.pct_of_sales}% of sales`} · limit {r.cap_pct}%</div></div>
+      <div className="card"><div className="lab">Returns waiting</div><div className="big">{sh(r.waiting)}</div><div className="ctx">{sh(r.accepted)} approved or settled</div></div>
+      <div className="card"><div className="lab">Saved by near-expiry selling</div><div className="big" style={{ color: d.lots.sold > 0 ? 'var(--good)' : undefined }}>{sh(d.lots.sold)}</div><div className="ctx">{d.lots.boxes} boxes sold · {sh(d.lots.given)} given as offer</div></div>
+    </div>
+    <section className="card"><div className="hd"><h2>Expiry returns by month</h2><span className="sub">claims not rejected or withdrawn</span></div>
+      {!d.months.length ? <p className="sub">No expiry claim in the last 12 months.</p> :
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{d.months.map((m: any) => <div key={m.month}><div className="hd"><span className="num">{m.month} <span className="code">{m.n} claims</span></span><span className="num">{rs(m.amount)}</span></div>
+          <div style={{ height: 10, background: 'var(--sunk)', borderRadius: 4 }}><div style={{ height: '100%', width: `${m.amount / mx * 100}%`, borderRadius: '0 4px 4px 0', background: 'var(--warn-fill)' }} /></div></div>)}</div>}</section>
+    <div className="g" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))' }}>
+      <section className="card"><h2>Customers returning the most</h2>
+        {!d.byCustomer.length ? <p className="sub">Nothing to show.</p> : <div className="tbl"><table><thead><tr><th>Customer</th><th className="r">Claims</th><th className="r">Returned</th><th className="r">Of purchases</th></tr></thead>
+          <tbody>{d.byCustomer.map((c: any) => <tr key={c.id}><td><a href={`/customers/${c.id}`}><b>{c.customer}</b></a></td><td className="r num">{c.n}</td><td className="r num">{rs(c.amount)}</td><td className="r">{c.pct == null ? <span className="pill crit">no purchases</span> : <span className={`pill ${c.over ? 'crit' : 'good'}`}>{c.pct}%</span>}</td></tr>)}</tbody></table></div>}</section>
+      <section className="card"><h2>Products coming back the most</h2>
+        {!d.byProduct.length ? <p className="sub">Nothing to show.</p> : <div className="tbl"><table><thead><tr><th>Product</th><th className="r">Boxes</th><th className="r">Returned</th></tr></thead>
+          <tbody>{d.byProduct.map((x: any) => <tr key={x.code}><td><b>{x.product}</b><br /><span className="code">{x.code}</span></td><td className="r num">{x.boxes}</td><td className="r num">{rs(x.amount)}</td></tr>)}</tbody></table></div>}</section>
+    </div>
+    <section className="card"><p className="sub">A product that keeps coming back is being pushed into the market faster than it sells: lower the quantity per order there, or run a scheme for the retailer instead of the distributor. A customer in red is over the yearly returns limit set in Settings.</p></section>
+  </>;
+}
+
+export default function Expiry({ canManage, canOrder, canLoss }: { canManage: boolean; canOrder: boolean; canLoss: boolean }) {
+  const tabs = [['pos', 'Expiry position'], ['slabs', 'Offer slabs'], canLoss && ['loss', 'Loss and returns'], canManage && ['upload', 'Upload stock']].filter(Boolean) as string[][];
   const [tab, setTab] = useState('pos'); const [n, setN] = useState(0);
   return <>
     <section className="card"><div className="toolbar"><div className="l">{tabs.map(t => <button key={t[0]} className={`btn ${tab === t[0] ? 'primary' : ''}`} onClick={() => setTab(t[0])}>{t[1]}</button>)}</div></div></section>
     {tab === 'pos' && <Position key={n} canOrder={canOrder} />}
     {tab === 'slabs' && <Slabs canManage={canManage} />}
+    {tab === 'loss' && <Loss />}
     {tab === 'upload' && <Upload onDone={() => setN(x => x + 1)} />}
   </>;
 }
