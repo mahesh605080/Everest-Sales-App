@@ -1,4 +1,4 @@
-# Everest SFA — Phases 1 to 3 (web)
+# Everest SFA — Phases 1 to 4 (web)
 
 Sales force monitoring and control system for Everest Parenterals Pvt. Ltd.
 This is Phase 1: the foundation that every later phase builds on.
@@ -54,7 +54,22 @@ Numbers look like `BK-8384-0001` and `SO-8384-0001`, where 8384 is the Nepali fi
 
 Not in this phase: a printable order PDF, and editing a sent-back booklet (the user creates a new one).
 
-Not built yet: collections, claims, expenses, secondary sales, tenders, targets, incentive, scorecard, reports. They are listed in the left menu under "Coming next".
+## What Phase 4 adds
+
+| Area | What works now |
+| --- | --- |
+| Collections | Field user records cash, cheque, bank transfer or online payment with a photo; Credit Control verifies it. Verified collections dated after the last outstanding upload are added back to the customer's available credit |
+| Expenses | One claim per day: route, km, DA, lodging, other, bill photo. Travel allowance = km × the rate in Settings; DA is capped by Settings. The km is compared with that day's GPS path and flagged (and alerted) when it is above the tolerance. Manager approves, accounts marks paid |
+| Claims | Expired stock, near expiry, breakage, rate difference: customer, product, quantity, batch, amount, photo. RSM or GM approves, Credit Control settles |
+| Leave | Apply with dates and reason; the manager approves. Approved leave stops the no-check-in alert and shows "On leave" in Team today |
+| Distributor stock | Field user reports stock, 30-day sale and near-expiry boxes per product for a distributor. Managers see the latest report with days of cover and filters for reorder, overstock and near expiry |
+| Tenders | Register of institutional bids with buyer, value, bid security, closing date, stage and owner; import/export like any master |
+
+Collections, expenses, claims and leave share one engine (`lib/reqdefs.ts` describes the fields and steps, `lib/req.ts` runs them), so a new request type is mostly a definition plus a table.
+
+GPS distance for an expense day uses the location points the app recorded that day. With the browser-only app those points exist only while the page was open, so a low GPS figure is a prompt to ask, not proof; the Android app's background tracking will make it reliable.
+
+Not built yet: sample and gift issue, competitor information, targets, incentive, scorecard, the report library. They are listed in the left menu under "Coming next".
 
 ## Run it on your own computer (for a developer)
 
@@ -149,6 +164,9 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 | `GET /api/booklets?box=mine|inbox|all|usable&customer=`, `POST /api/booklets`, `GET/POST /api/booklets/{id}` | Booklets: list, create, detail, act (`approve`, `back`, `reject`, `cancel`) |
 | `GET /api/orders?box=mine|queue|approved|all`, `POST /api/orders`, `GET/POST /api/orders/{id}`, `GET /api/orders/export?day=` | Sales orders: list, create, detail, act (`approve`, `reject`, `withdraw`, `dispatch`), daily export |
 | `GET /api/credit?customer=`, `GET /api/credit?q=`, `PUT /api/credit`, `POST /api/credit`, `GET/POST /api/credit/outstanding` | Credit position, customer list, set limit, instruments, outstanding upload |
+| `GET /api/req/{type}?box=mine|inbox|all`, `POST /api/req/{type}`, `POST /api/req/{type}/{id}` | `collections`, `expenses`, `claims`, `leave`: list, create, act (`next`, `reject`, `withdraw`) |
+| `POST /api/photo`, `GET /api/photo/{id}` | Upload a proof photo (JPEG data URL) and read it back |
+| `GET /api/stock?customer=`, `GET /api/stock`, `POST /api/stock` | Distributor stock: last report for a customer, latest view, save today's report |
 | `GET /api/alerts?open=1`, `POST /api/alerts/ack`, `GET/PUT /api/alerts/rules` | Alerts |
 
 ## How the code is organised

@@ -72,6 +72,22 @@ export const ENT: Record<string, Entity> = {
   },
 };
 
+ENT.tenders = {
+  key: 'tenders', table: 'tenders', label: 'Tenders', one: 'tender', search: ['code', 'name', 'buyer'],
+  note: 'Institutional bids: who is buying, how much, when it closes and where it stands.',
+  fields: [
+    { key: 'code', label: 'Tender number', type: 'text', required: true, upper: true, list: true }, { key: 'name', label: 'Scope', type: 'text', required: true, list: true },
+    { key: 'buyer', label: 'Buyer', type: 'text', required: true, list: true },
+    { key: 'customer_id', label: 'Customer (if already in the master)', type: 'rel', rel: 'customers' },
+    { key: 'est_value', label: 'Estimated value (Rs)', type: 'money', def: 0, list: true },
+    { key: 'emd_amount', label: 'Bid security / EMD (Rs)', type: 'money', def: 0 },
+    { key: 'closing_date', label: 'Closing date', type: 'date', list: true },
+    { key: 'stage', label: 'Stage', type: 'select', required: true, list: true, options: ['Identified', 'Documents purchased', 'Bid preparation', 'Submitted', 'Technical evaluation', 'Awarded', 'Lost', 'Cancelled'] },
+    { key: 'owner_id', label: 'Owner', type: 'rel', rel: 'employees', list: true },
+    { key: 'remarks', label: 'Remarks', type: 'text', wide: true },
+  ],
+};
+
 export function relInfo(rel: string) {
   if (rel === 'roles') return { table: 'roles', label: 'name', code: 'key' };
   if (rel === 'employees') return { table: 'users', label: 'name', code: 'code' };

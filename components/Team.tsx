@@ -5,6 +5,7 @@ import { call, rs } from '@/lib/ui';
 import { fmtTime, nptToday } from '@/lib/geo';
 
 function status(p: any, isToday: boolean): [string, string] {
+  if (!p.in_at && p.on_leave) return ['On leave', ''];
   if (!p.in_at) return [isToday ? 'Not checked in' : 'Absent', 'crit'];
   if (p.auto_closed) return ['Missed check-out', 'warn'];
   if (p.out_at) return ['Day closed', ''];
@@ -23,7 +24,7 @@ export default function Team() {
   return (
     <>
       <div className="g kpi">
-        <K l="On duty" v={`${present.length} / ${p.length}`} c={`${p.length - present.length} not checked in`} />
+        <K l="On duty" v={`${present.length} / ${p.length}`} c={`${p.filter(x => !x.in_at && !x.on_leave).length} not checked in · ${p.filter(x => !x.in_at && x.on_leave).length} on leave`} />
         <K l="Late" v={present.filter(x => x.late).length} c="after the check-in time in Settings" />
         <K l="Visits" v={p.reduce((a, x) => a + x.visits, 0)} c={`${p.filter(x => x.at_customer).length} in progress now`} />
         <K l="Outside geo-fence" v={p.reduce((a, x) => a + x.flagged, 0)} c="visits started away from the customer" />

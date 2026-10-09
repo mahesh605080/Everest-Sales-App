@@ -3,6 +3,7 @@ import Shell from '@/components/Shell';
 import { getSession } from '@/lib/auth';
 import { ENT } from '@/lib/entities';
 import { can } from '@/lib/perm';
+import { REQ } from '@/lib/reqdefs';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const overview = [{ href: '/dashboard', label: 'Dashboard' }];
   if (can(s, 'map.view')) overview.push({ href: '/map', label: can(s, 'track.view') ? 'Live map' : 'Customer map' });
   if (can(s, 'track.send')) overview.push({ href: '/location', label: 'Share my location' });
-  const masters = Object.values(ENT).filter(e => can(s, `${e.key}.view`)).map(e => ({ href: `/m/${e.key}`, label: e.label }));
+  const masters = Object.values(ENT).filter(e => e.key !== 'tenders' && can(s, `${e.key}.view`)).map(e => ({ href: `/m/${e.key}`, label: e.label }));
   const admin = [] as { href: string; label: string }[];
   if (can(s, 'roles.manage')) admin.push({ href: '/roles', label: 'Roles and permissions' });
   if (can(s, 'settings.manage')) admin.push({ href: '/settings', label: 'Settings' });
@@ -27,7 +28,10 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'booklets.create') || can(s, 'booklets.approve') || can(s, 'sales.view')) sales.push({ href: '/booklets', label: 'Booklets' });
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/orders', label: 'Sales orders' });
   if (can(s, 'credit.manage') || can(s, 'dispatch.manage')) sales.push({ href: '/credit', label: 'Credit control' });
-  const nav = [{ group: 'Overview', items: overview }, { group: 'Field', items: field }, { group: 'Sales', items: sales }, { group: 'Masters', items: masters }, { group: 'Administration', items: admin }].filter(g => g.items.length);
+  if (can(s, 'tenders.view')) sales.push({ href: '/m/tenders', label: 'Tenders' });
+  const money = Object.values(REQ).filter(d => can(s, d.create) || d.steps.some(st => can(s, st.perm))).map(d => ({ href: `/r/${d.key}`, label: d.label }));
+  if (can(s, 'stock.report') || can(s, 'stock.view')) money.push({ href: '/stock', label: 'Distributor stock' });
+  const nav = [{ group: 'Overview', items: overview }, { group: 'Field', items: field }, { group: 'Sales', items: sales }, { group: 'Money and requests', items: money }, { group: 'Masters', items: masters }, { group: 'Administration', items: admin }].filter(g => g.items.length);
   const titles: Record<string, [string, string]> = {
     '/dashboard': ['Dashboard', 'Master data health and recent changes'],
     '/map': ['Map', 'Customers and the last known position of the field team'],
@@ -46,6 +50,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/audit': ['Audit log', 'Every login and every change, with who and when'],
     '/profile': ['My account', 'Change your password'],
   };
+  for (const d of Object.values(REQ)) titles[`/r/${d.key}`] = [d.label, d.intro];
+  titles['/stock'] = ['Distributor stock', 'What each distributor holds, how fast it sells and what is near expiry'];
   for (const e of Object.values(ENT)) titles[`/m/${e.key}`] = [e.label, e.note || `Add, edit, import and export ${e.label.toLowerCase()}`];
   return <Shell user={{ name: s.name, role_name: s.role_name, must_change_password: s.must_change_password }} nav={nav} titles={titles}>{children}</Shell>;
 }

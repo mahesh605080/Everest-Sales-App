@@ -12,7 +12,7 @@ export function CreditBox({ c }: { c: any }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--canvas)', borderRadius: 10, padding: 12 }}>
       <div className="g" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 10 }}>
         <K l="Credit limit" v={rs(c.credit_limit)} /><K l={`Outstanding${c.as_of ? ' (as of ' + c.as_of + ')' : ''}`} v={rs(c.outstanding)} />
-        <K l="Approved, not dispatched" v={rs(c.committed)} /><K l="Available credit" v={rs(c.available)} k={c.available < 0} /></div>
+        <K l="Approved, not dispatched" v={rs(c.committed)} />{c.collected > 0 && <K l="Collected since upload" v={rs(c.collected)} />}<K l="Available credit" v={rs(c.available)} k={c.available < 0} /></div>
       {c.outstanding > 0 && <><div className="aging">{[c.b0, c.b1, c.b2, c.b3].map((v: number, i: number) => v > 0 ? <i key={i} className={`a${i}`} style={{ flex: v / t }} /> : null)}</div>
         <div className="legend"><span><i className="a0" />0–30: {rs(c.b0)}</span><span><i className="a1" />31–60: {rs(c.b1)}</span><span><i className="a2" />61–90: {rs(c.b2)}</span><span><i className="a3" />90+: {rs(c.b3)}</span></div></>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

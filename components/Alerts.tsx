@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { call, toast } from '@/lib/ui';
 import { fmtTime } from '@/lib/geo';
 
-const NAMES: Record<string, string> = { no_checkin: 'Attendance', idle: 'Idle', geofence: 'Location', missed_checkout: 'Check-out', coverage: 'Coverage', approval_wait: 'Approval', instrument_expiry: 'Credit' };
+const NAMES: Record<string, string> = { no_checkin: 'Attendance', idle: 'Idle', geofence: 'Location', missed_checkout: 'Check-out', coverage: 'Coverage', approval_wait: 'Approval', instrument_expiry: 'Credit', expense_gps: 'Expense' };
 
 export default function Alerts({ canManage }: { canManage: boolean }) {
   const [open, setOpen] = useState(true); const [rows, setRows] = useState<any[] | null>(null); const [rules, setRules] = useState<any[]>([]); const [err, setErr] = useState('');

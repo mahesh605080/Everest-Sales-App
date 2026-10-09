@@ -130,7 +130,8 @@ export async function teamToday(s: Session, day?: string) {
             (select count(*)::int from visits v where v.user_id=u.id and v.day=${d} and v.out_of_fence) as flagged,
             (select c.name from visits v join customers c on c.id=v.customer_id where v.user_id=u.id and v.out_at is null limit 1) as at_customer,
             (select max(coalesce(v.out_at, v.in_at)) from visits v where v.user_id=u.id and v.day=${d}) as last_visit_at,
-            (select max(p.at) from location_pings p where p.user_id=u.id and p.at > now() - interval '12 hours') as last_ping
+            (select max(p.at) from location_pings p where p.user_id=u.id and p.at > now() - interval '12 hours') as last_ping,
+            exists(select 1 from leaves l where l.user_id=u.id and l.status='Approved' and ${d} between l.from_date and l.to_date) as on_leave
        from users u join roles r on r.id=u.role_id left join areas a on a.id=u.area_id left join regions g on g.id=u.region_id
        left join attendance t on t.user_id=u.id and t.day=${d}
       where u.active and r.permissions ? 'field.use' and r.key <> 'admin'${scope}
@@ -169,6 +170,7 @@ export async function runAlerts(force = false) {
       where ${field} and extract(dow from ${NPT}) <> 6
         and extract(hour from ${NPT})*60+extract(minute from ${NPT}) >= $1
         and not exists(select 1 from attendance t where t.user_id=u.id and t.day=${TODAY})
+        and not exists(select 1 from leaves l where l.user_id=u.id and l.status='Approved' and ${TODAY} between l.from_date and l.to_date)
      on conflict(key) do nothing`, [Math.min(1439, Math.max(0, Math.round(Number(rules.no_checkin.threshold) || 600)))]);
 
   if (rules.idle?.enabled) await q(

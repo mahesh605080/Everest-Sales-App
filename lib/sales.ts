@@ -32,10 +32,12 @@ export async function creditSnapshot(customerId: number) {
     `select c.id,c.code,c.name,c.town,c.credit_limit,c.dda_expiry,c.dda_expiry < ${TODAY} as dda_expired,
             coalesce(o.total,0) as outstanding, coalesce(o.b0,0) as b0, coalesce(o.b1,0) as b1, coalesce(o.b2,0) as b2, coalesce(o.b3,0) as b3, o.as_of,
             (${TODAY} - o.as_of) as age_days,
-            (select coalesce(sum(value),0) from sales_orders so where so.customer_id=c.id and so.status='Approved') as committed
+            (select coalesce(sum(value),0) from sales_orders so where so.customer_id=c.id and so.status='Approved') as committed,
+            (select coalesce(sum(amount),0) from collections k where k.customer_id=c.id and k.status='Verified' and k.day > coalesce(o.as_of, date '1900-01-01')) as collected
        from customers c left join outstanding_balances o on o.customer_id=c.id where c.id=$1`, [customerId]);
   if (!c) throw new HttpError(404, 'Customer not found.');
-  c.available = round(c.credit_limit - c.outstanding - c.committed);
+  // Verified collections dated after the last upload are not yet in the uploaded outstanding, so they free up credit.
+  c.available = round(c.credit_limit - c.outstanding + c.collected - c.committed);
   c.stale = c.as_of == null || c.age_days > (await setting('outstanding_stale_days', 10));
   c.instruments = await q<any>(`select id,type,bank,ref_no,amount,issue_date,expiry_date,status,remarks, expiry_date < ${TODAY} as expired, expiry_date <= ${TODAY} + 30 as expiring
                                   from financial_instruments where customer_id=$1 order by (status='Active') desc, expiry_date nulls last`, [customerId]);

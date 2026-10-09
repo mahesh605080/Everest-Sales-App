@@ -1,0 +1,172 @@
+import { q, q1 } from './db';
+import { HttpError } from './auth';
+import { audit } from './audit';
+import { listRows } from './crud';
+import { ENT } from './entities';
+import { metres, teamScope, TODAY } from './field';
+import { can, Session } from './perm';
+import { REQ, ReqDef, RField } from './reqdefs';
+
+export function reqDef(key: string): ReqDef {
+  const d = REQ[key]; if (!d) throw new HttpError(404, 'Unknown list.'); return d;
+}
+const setting = async (key: string, def: number) => Number((await q1<any>('select value from settings where key=$1', [key]))?.value ?? def);
+const round = (n: number) => Math.round(n * 100) / 100;
+const isDate = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v));
+
+function coerce(f: RField, raw: any) {
+  const empty = raw === undefined || raw === null || String(raw).trim() === '';
+  if (empty) { if (f.required) throw new HttpError(422, `${f.label} is required.`); return ['money', 'km'].includes(f.type) ? 0 : null; }
+  switch (f.type) {
+    case 'text': return String(raw).trim().slice(0, 500);
+    case 'money': case 'km': { const n = Number(raw); if (!Number.isFinite(n) || n < 0) throw new HttpError(422, `${f.label} must be a number, zero or more.`); return f.type === 'km' ? Math.round(n * 10) / 10 : round(n); }
+    case 'int': case 'customer': case 'product': case 'photo': { const n = Number(raw); if (!Number.isInteger(n) || n <= 0) throw new HttpError(422, `${f.label} is not valid.`); return n; }
+    case 'date': if (!isDate(raw)) throw new HttpError(422, `${f.label} must be a date.`); return raw;
+    case 'select': if (!f.options!.includes(raw)) throw new HttpError(422, `Choose ${f.label.toLowerCase()}.`); return raw;
+  }
+}
+
+/** GPS distance for one person on one day: the path through that day's location points, ignoring very inaccurate fixes. */
+export async function gpsKm(userId: number, day: string) {
+  const pts = await q<any>(`select lat,lng from location_pings where user_id=$1 and (at at time zone 'Asia/Kathmandu')::date=$2::date and coalesce(accuracy,0) <= 200 order by at`, [userId, day]);
+  let m = 0; for (let i = 1; i < pts.length; i++) { const d = metres(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng); if (d >= 30) m += d; }
+  return { km: Math.round(m / 100) / 10, points: pts.length };
+}
+
+export async function createReq(def: ReqDef, s: Session, body: any, ip: string | null) {
+  const v: Record<string, any> = {};
+  for (const f of def.fields) v[f.key] = coerce(f, body[f.key]);
+  const today = (await q1<any>(`select ${TODAY}::text d`))!.d as string;
+  if (v.customer_id) { const c = (await listRows(ENT.customers, s, { id: v.customer_id })).rows[0]; if (!c || !c.active) throw new HttpError(403, 'This customer is not in your territory.'); }
+  if (v.product_id && !(await q1('select 1 from products where id=$1 and active', [v.product_id]))) throw new HttpError(422, 'Choose a product from the list.');
+  if (v.photo_id && !(await q1('select 1 from photos where id=$1 and user_id=$2', [v.photo_id, s.id]))) throw new HttpError(422, 'The photo could not be found. Attach it again.');
+  let alert: string | null = null;
+
+  if (def.key === 'collections') {
+    if (v.amount <= 0) throw new HttpError(422, 'Amount must be more than zero.');
+    if (v.mode === 'Cheque' && (!v.ref_no || !v.cheque_date)) throw new HttpError(422, 'A cheque needs its number and date.');
+    v.day = today;
+  }
+  if (def.key === 'claims') { if (v.amount <= 0) throw new HttpError(422, 'Claim amount must be more than zero.'); v.day = today; }
+  if (def.key === 'expenses') {
+    if (v.day > today) throw new HttpError(422, 'The travel date cannot be in the future.');
+    if (Date.parse(today) - Date.parse(v.day) > 45 * 864e5) throw new HttpError(422, 'Claims older than 45 days cannot be entered.');
+    if (await q1(`select 1 from expenses where user_id=$1 and day=$2 and status <> 'Rejected'`, [s.id, v.day])) throw new HttpError(409, 'You already have a claim for that date.');
+    const daLimit = await setting('da_daily_limit', 800);
+    if (v.da > daLimit) throw new HttpError(422, `Daily allowance cannot be more than Rs ${daLimit}.`);
+    if (v.other > 0 && !v.other_note) throw new HttpError(422, 'Say what the other amount is for.');
+    const g = await gpsKm(s.id, v.day), tol = await setting('km_tolerance_pct', 15);
+    v.km_gps = g.points >= 2 ? g.km : null;
+    v.over_gps = g.points >= 2 && v.km_claimed > g.km * (1 + tol / 100) + 2;
+    v.ta = round(v.km_claimed * (await setting('ta_rate_per_km', 10)));
+    v.total = round(v.ta + v.da + v.lodging + v.other);
+    if (v.total <= 0) throw new HttpError(422, 'The claim has no amount.');
+    if (v.over_gps) alert = `Claimed ${v.km_claimed} km on ${v.day}; GPS shows ${g.km} km.`;
+  }
+  if (def.key === 'leave') {
+    if (v.to_date < v.from_date) throw new HttpError(422, 'The "to" date is before the "from" date.');
+    v.days = Math.round((Date.parse(v.to_date) - Date.parse(v.from_date)) / 864e5) + 1;
+    if (v.days > 60) throw new HttpError(422, 'A single request can cover at most 60 days.');
+    if (await q1(`select 1 from leaves where user_id=$1 and status <> 'Rejected' and from_date <= $3 and to_date >= $2`, [s.id, v.from_date, v.to_date])) throw new HttpError(409, 'You already have leave covering some of these dates.');
+    v.day = today;
+  }
+  const keys = Object.keys(v);
+  const row = await q1<any>(`insert into ${def.table}(user_id,${keys.map(k => `"${k}"`).join(',')}) values($1,${keys.map((_, i) => '$' + (i + 2)).join(',')}) returning id`, [s.id, ...keys.map(k => v[k])]);
+  await q('insert into approvals(doc_type,doc_id,user_id,user_name,action) values($1,$2,$3,$4,$5)', [def.key, row!.id, s.id, s.name, 'Submitted']);
+  if (alert && (await q1<any>(`select enabled from alert_rules where key='expense_gps'`))?.enabled)
+    await q(`insert into alerts(rule,severity,user_id,message,day,key) values('expense_gps','warn',$1,$2,${TODAY},$3) on conflict(key) do nothing`, [s.id, alert, `expense_gps:${row!.id}`]);
+  await audit(s, 'create', def.key, row!.id, null, v, ip);
+  return { id: row!.id, over_gps: !!v.over_gps, total: v.total };
+}
+
+function selectSql(def: ReqDef) {
+  const hasC = def.fields.some(f => f.type === 'customer'), hasP = def.fields.some(f => f.type === 'product');
+  return `select t.*, u.name as person, u.code as person_code, a.name as area${hasC ? ', c.name as customer, c.code as customer_code' : ''}${hasP ? ', p.name as product' : ''}
+            from ${def.table} t join users u on u.id=t.user_id left join areas a on a.id=u.area_id${hasC ? ' left join customers c on c.id=t.customer_id' : ''}${hasP ? ' left join products p on p.id=t.product_id' : ''}`;
+}
+const mySteps = (def: ReqDef, s: Session) => def.steps.filter(st => can(s, st.perm));
+
+export async function listReq(def: ReqDef, s: Session, box: string) {
+  const p: any[] = []; let w: string;
+  if (box === 'mine') { p.push(s.id); w = 't.user_id=$1'; }
+  else {
+    const steps = mySteps(def, s);
+    if (!steps.length) throw new HttpError(403, 'Your role does not allow this.');
+    const all = steps.some(st => st.scope === 'all');
+    if (box === 'inbox') {
+      const parts = steps.map(st => { p.push(st.from); return `(t.status=$${p.length}${st.scope === 'team' ? ` and t.user_id <> ${s.id}` + teamScope(s, p) : ''})`; });
+      w = '(' + parts.join(' or ') + ')';
+    } else w = 'true' + (all ? '' : teamScope(s, p));
+  }
+  const rows = await q<any>(`${selectSql(def)} where ${w} order by t.created_at desc limit 300`, p);
+  const ids = rows.map(r => r.id);
+  const trails = ids.length ? await q<any>('select doc_id,user_name,action,remarks,at from approvals where doc_type=$1 and doc_id = any($2) order by at, id', [def.key, ids]) : [];
+  for (const r of rows) {
+    r.trail = trails.filter(t => t.doc_id === r.id);
+    const st = def.steps.find(x => x.from === r.status && can(s, x.perm));
+    r.next = st && (st.scope === 'all' || r.user_id !== s.id) ? st.label : null;
+  }
+  return rows;
+}
+
+export async function actReq(def: ReqDef, s: Session, id: number, b: any, ip: string | null) {
+  const row = Number.isInteger(id) ? await q1<any>(`select * from ${def.table} where id=$1`, [id]) : null;
+  if (!row) throw new HttpError(404, `This ${def.one} no longer exists.`);
+  const remarks = String(b.remarks || '').trim().slice(0, 500);
+  if (b.action === 'withdraw') {
+    if (row.user_id !== s.id || row.status !== 'Submitted') throw new HttpError(409, 'Only your own request that nobody has acted on can be withdrawn.');
+    await q(`update ${def.table} set status='Withdrawn', updated_at=now() where id=$1`, [id]);
+    await q('insert into approvals(doc_type,doc_id,user_id,user_name,action) values($1,$2,$3,$4,$5)', [def.key, id, s.id, s.name, 'Withdrawn']);
+    return { status: 'Withdrawn', message: 'Withdrawn.' };
+  }
+  const st = def.steps.find(x => x.from === row.status && can(s, x.perm));
+  if (!st) throw new HttpError(403, `This ${def.one} is not waiting for you.`);
+  if (st.scope === 'team') {
+    if (row.user_id === s.id) throw new HttpError(403, 'You cannot decide your own request.');
+    const p: any[] = [row.user_id]; const scope = teamScope(s, p);
+    if (!(await q1(`select 1 from users u where u.id=$1${scope}`, p))) throw new HttpError(403, 'This person is not in your team.');
+  }
+  let status: string, action: string;
+  if (b.action === 'reject') { if (!remarks) throw new HttpError(422, 'Remarks are needed to reject.'); status = 'Rejected'; action = 'Rejected'; }
+  else if (b.action === 'next') { status = st.to; action = st.to; }
+  else throw new HttpError(422, 'Unknown action.');
+  await q(`update ${def.table} set status=$1, updated_at=now() where id=$2`, [status, id]);
+  await q('insert into approvals(doc_type,doc_id,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6)', [def.key, id, s.id, s.name, action, remarks || null]);
+  await audit(s, action.toLowerCase(), def.key, id, { status: row.status }, { status, remarks }, ip);
+  return { status, message: status === 'Rejected' ? 'Rejected.' : st.done };
+}
+
+/* ---------------- distributor stock ---------------- */
+export async function stockForm(s: Session, customerId: number) {
+  const c = (await listRows(ENT.customers, s, { id: customerId })).rows[0];
+  if (!c || !c.active) throw new HttpError(403, 'This customer is not in your territory.');
+  const last = await q1<any>('select id, day from stock_reports where customer_id=$1 order by day desc limit 1', [customerId]);
+  const items = last ? await q<any>('select product_id, stock, sold_30d, near_expiry from stock_report_items where report_id=$1', [last.id]) : [];
+  return { last_day: last?.day ?? null, items };
+}
+export async function saveStock(s: Session, b: any, ip: string | null) {
+  const cid = Number(b.customer_id), c = (await listRows(ENT.customers, s, { id: cid })).rows[0];
+  if (!c || !c.active) throw new HttpError(403, 'This customer is not in your territory.');
+  const items = (Array.isArray(b.items) ? b.items : []).map((i: any) => ({ p: Number(i.product_id), stock: Number(i.stock) || 0, sold: Number(i.sold_30d) || 0, exp: Number(i.near_expiry) || 0 }))
+    .filter((i: any) => i.stock > 0 || i.sold > 0 || i.exp > 0);
+  if (!items.length) throw new HttpError(422, 'Enter stock or sales for at least one product.');
+  for (const i of items) {
+    if (![i.stock, i.sold, i.exp].every(n => Number.isInteger(n) && n >= 0)) throw new HttpError(422, 'Quantities must be whole boxes, zero or more.');
+    if (i.exp > i.stock) throw new HttpError(422, 'Near-expiry boxes cannot be more than the stock.');
+  }
+  const rep = await q1<any>(`insert into stock_reports(user_id,customer_id,day) values($1,$2,${TODAY}) on conflict(customer_id,day) do update set user_id=excluded.user_id, created_at=now() returning id`, [s.id, cid]);
+  await q('delete from stock_report_items where report_id=$1', [rep!.id]);
+  for (const i of items) await q('insert into stock_report_items(report_id,product_id,stock,sold_30d,near_expiry) values($1,$2,$3,$4,$5)', [rep!.id, i.p, i.stock, i.sold, i.exp]);
+  await audit(s, 'stock-report', 'stock_reports', rep!.id, null, { customer: c.name, lines: items.length }, ip);
+  return { ok: true };
+}
+/** Latest report per customer, one row per product, with days of cover. */
+export async function stockView(s: Session) {
+  const p: any[] = []; const scope = can(s, 'credit.manage') ? '' : teamScope(s, p);
+  return q<any>(
+    `select c.name as customer, c.code as customer_code, c.town, pr.name as product, pr.code as product_code, i.stock, i.sold_30d, i.near_expiry, r.day, u.name as person,
+            case when i.sold_30d > 0 then round(i.stock::numeric / i.sold_30d * 30)::int end as cover_days
+       from stock_reports r join stock_report_items i on i.report_id=r.id join customers c on c.id=r.customer_id join products pr on pr.id=i.product_id join users u on u.id=r.user_id
+      where r.day = (select max(day) from stock_reports x where x.customer_id=r.customer_id)${scope}
+      order by c.name, pr.name limit 3000`, p);
+}
