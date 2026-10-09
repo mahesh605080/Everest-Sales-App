@@ -56,7 +56,7 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
       setBk(''); setLines(r.items.map((i: any) => ({ product_id: String(i.product_id), qty: String(i.qty) }))); setNote(`Filled from ${r.order.no} of ${r.order.order_date}. Change the quantities if needed. Rates are today's standard rates.`);
     } catch (e: any) { setErr(e.message); }
   }
-  const [sug, setSug] = useState<any>(null);
+  const [sug, setSug] = useState<any>(null); const [grid, setGrid] = useState<Record<string, string> | null>(null);
   async function suggest(c: string) {
     try { const r = await call(`/api/sales/suggest?customer=${c}`); setSug(r);
       if (!r.items.length) { setNote(r.basis === 'stock' ? `Stock report of ${r.day} shows enough stock of every product for ${r.target_days} days.` : 'No stock report or order history to suggest from. Report this customer\'s stock first.'); return; }
@@ -109,7 +109,13 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
         <div className="fld"><label htmlFor="od-trn">Transporter name</label><input id="od-trn" type="text" value={f.transporter} onChange={e => setF({ ...f, transporter: e.target.value })} /></div>
         <div className="fld"><label htmlFor="od-veh">Vehicle number</label><input id="od-veh" type="text" value={f.vehicle_no} onChange={e => setF({ ...f, vehicle_no: e.target.value })} /></div></div>
       {credit && <CreditBox c={credit} />}
-      {cust && !bk && <div className="toolbar"><div className="l"><button type="button" className="btn" onClick={() => repeat(cust)}>Repeat last order</button><button type="button" className="btn" onClick={() => suggest(cust)}>Suggested order</button>{note && <span className="sub">{note}</span>}</div></div>}
+      {cust && !bk && <div className="toolbar"><div className="l"><button type="button" className="btn" onClick={() => repeat(cust)}>Repeat last order</button><button type="button" className="btn" onClick={() => suggest(cust)}>Suggested order</button><button type="button" className="btn" onClick={() => setGrid(grid ? null : Object.fromEntries(lines.filter(l => l.product_id && !l.lot).map(l => [l.product_id, l.qty])))}>{grid ? 'Close quick entry' : 'Quick entry (all products)'}</button>{note && <span className="sub">{note}</span>}</div></div>}
+      {grid && !bk && <div style={{ background: 'var(--canvas)', borderRadius: 10, padding: 12 }}>
+        <div className="hd"><div><b>Quick entry</b> <span className="sub">type the boxes against each product, then "Use these"</span></div>
+          <button type="button" className="btn sm primary" onClick={() => { const ls = prods.filter(p => Number(grid[String(p.id)]) > 0).map(p => ({ product_id: String(p.id), qty: String(Math.floor(Number(grid[String(p.id)]))) })); setLines([...lines.filter(l => l.lot), ...(ls.length ? ls : [{ product_id: '', qty: '10' }])]); setGrid(null); }}>Use these</button></div>
+        <div className="feed">{prods.map(p => { const id = String(p.id), sc = pricing.rates[id]?.source === 'customer' ? null : pricing.schemes.find((x: any) => String(x.product_id) === id), k = sug?.stock?.[id]; return <div key={p.id} style={{ alignItems: 'center' }}>
+          <div className="t" style={{ flex: 1, minWidth: 0 }}><b>{p.name}</b> <span className="code">{p.pack_size || ''} · Rs {Number(listRate(id)).toFixed(2)}</span>{sc && <> <span className="pill good">{sc.text} from {sc.min_qty}</span></>}{k && <><br /><span className="code">holds {k.stock}, sells {k.sold_30d} a month</span></>}</div>
+          <input type="number" min={0} inputMode="numeric" placeholder="0" aria-label={`${p.name} boxes`} value={grid[id] ?? ''} onChange={e => setGrid(g => ({ ...g!, [id]: e.target.value }))} style={{ width: 84, textAlign: 'right', flex: 'none' }} /></div>; })}</div></div>}
       {lines.map((l, i) => { const p = bk ? bkItems.find(x => String(x.product_id) === l.product_id) : P.get(l.product_id); return <div key={i} style={{ background: 'var(--canvas)', borderRadius: 10, padding: 12, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', alignItems: 'end' }}>
         {l.lot ? <div style={{ gridColumn: 'span 2' }}><div className="lab">Near-expiry lot · non-returnable</div><b>{l.lot.product}</b><br /><span className="code">batch {l.lot.batch_no} · expires {l.lot.expiry_date} · {l.lot.offer.text} · {l.lot.free_boxes} boxes free</span></div>
           : bk ? <div style={{ gridColumn: 'span 2' }}><div className="lab">Product (from booklet)</div><b>{p?.product}</b></div>

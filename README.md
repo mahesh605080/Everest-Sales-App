@@ -155,6 +155,13 @@ The system's first job is to get more orders in with less effort. These screens 
 - **Answers** — each action can be marked Done, Later or Not interested (with a reason). Answered actions hide for a while; managers see the reasons customers gave in the last 30 days.
 - **Customer classes** — A (first 80% of 12-month sales), B (next 15%), C (rest), with a visit norm per class (`visit_days_a/b/c`) and overdue visits counted.
 
+## Rebate, short stock, approvals and quick entry
+
+- **Yearly rebate** (Sales) — slabs on a distributor's approved purchases in the Nepali fiscal year (from 1 Shrawan). Shows the slab reached, rebate earned, and how many rupees more reach the next slab, closest first.
+- **Short stock** (Stock and expiry) — when open orders ask for more than the sellable stock, a fair share per order based on what each customer normally buys. A guide for dispatch; orders are not changed.
+- **Approvals** — one screen with every booklet, sales order, claim and collection waiting for the person, oldest first, with Approve and Reject in place. It is the second button on a manager's phone.
+- **Quick entry** (order screen) — all products in one list with a box for the quantity; schemes and the customer's stock are shown beside each product.
+
 ## Experience upgrades
 
 | Area | What works now |

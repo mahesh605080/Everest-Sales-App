@@ -11,3 +11,8 @@ export function fyLabel(iso: string) {
   const b = toBs(iso), start = b.month >= 4 ? b.year : b.year - 1;
   return String(start % 100).padStart(2, '0') + String((start + 1) % 100).padStart(2, '0');
 }
+/** First day (AD, 'YYYY-MM-DD') of the fiscal year that contains the given AD date: 1 Shrawan. */
+export function fyStart(iso: string) {
+  const b = toBs(iso), y = b.month >= 4 ? b.year : b.year - 1, d = new NepaliDate(y, 3, 1).toJsDate();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

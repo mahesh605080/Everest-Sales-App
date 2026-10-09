@@ -247,6 +247,23 @@ async function main() {
     ok('customers are classed A, B, C by 12-month sales', cl.customers.find((c: any) => c.id === c1.id)?.cls === 'A' && cl.summary.reduce((a: number, x: any) => a + x.customers, 0) === cl.customers.length && cl.customers.some((c: any) => c.cls === 'C'), cl.summary);
   }
 
+  // yearly rebate, fair share when stock is short, one approval inbox
+  { ok('a sales officer cannot set rebate slabs', (await so.put('/api/rebate', { slabs: [{ from_value: 100000, pct: 1 }] })).status === 403);
+    ok('a higher slab must give a higher rebate', (await gm.put('/api/rebate', { slabs: [{ from_value: 100000, pct: 2 }, { from_value: 500000, pct: 1 }] })).status === 422);
+    ok('GM sets rebate slabs', (await gm.put('/api/rebate', { slabs: [{ from_value: 100000, pct: 1 }, { from_value: 500000, pct: 2 }] })).status === 200);
+    const rb = (await gm.get('/api/rebate')).data, r1 = rb.rows.find((r: any) => r.id === c1.id);
+    ok('rebate position shows the slab reached and the gap to the next', r1 && r1.bought > 100000 && r1.pct === 1 && Math.abs(r1.earned - r1.bought * 0.01) < 0.01 && Math.abs(r1.gap - (500000 - r1.bought)) < 0.01 && rb.fy.length === 4, r1);
+    ok('a sales officer sees only own distributors in the rebate list', (await so.get('/api/rebate')).data.rows.every((r: any) => r.id !== other.id));
+    await so.post('/api/orders', { customer_id: c1.id, items: [{ product_id: ns.id, qty: 700 }] });
+    const sh = (await cc.get('/api/expiry?shortage=1')).data.rows.find((r: any) => r.product_id === ns.id);
+    ok('short stock is shared out and never more than the stock', sh && sh.short === sh.ordered - sh.stock && sh.lines.reduce((a: number, l: any) => a + l.share, 0) === sh.stock && sh.lines.every((l: any) => l.share <= l.qty), sh);
+    ok('the shortage view is not open to a sales officer', (await so.get('/api/expiry?shortage=1')).status === 403);
+    const ib = (await gm.get('/api/approvals')).data.items, ic = (await cc.get('/api/approvals')).data.items;
+    ok('one inbox lists what waits for each person', ib.some((i: any) => i.type === 'Claim' && i.warn) && ic.some((i: any) => i.type === 'Sales order') && (await so.get('/api/approvals')).data.items.length === 0, [ib.map((i: any) => i.type), ic.map((i: any) => i.type)]);
+    const one = ic.find((i: any) => i.type === 'Sales order' && !i.warn);
+    ok('an item can be decided straight from the inbox', one && (await cc.post(one.url, { ...one.ok, remarks: 'ok' })).data.status === 'Approved' && !(await cc.get('/api/approvals')).data.items.some((i: any) => i.key === one.key), one);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

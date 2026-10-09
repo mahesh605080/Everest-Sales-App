@@ -27,6 +27,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'plan.use') || can(s, 'plan.approve')) field.push({ href: '/plan', label: 'Tour plan' });
   if (can(s, 'team.view')) field.push({ href: '/team', label: 'Team visits' }, { href: '/visits', label: 'Visit report' });
   if (can(s, 'alerts.view')) field.push({ href: '/alerts', label: 'Alerts' });
+  if (can(s, 'booklets.approve') || can(s, 'credit.manage') || Object.values(REQ).some(d => d.steps.some(st => can(s, st.perm)))) overview.push({ href: '/approvals', label: 'Approvals' });
   overview.push({ href: '/notices', label: 'Notices' });
   const sales = [] as { href: string; label: string }[];
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/opportunities', label: 'Sales opportunities' });
@@ -36,6 +37,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'inventory.view')) sales.push({ href: '/expiry', label: 'Stock and expiry' });
   if (can(s, 'schemes.view')) sales.push({ href: '/m/schemes', label: 'Schemes' });
   if (can(s, 'rates.view')) sales.push({ href: '/m/rates', label: 'Price lists' });
+  if (can(s, 'rebate.view')) sales.push({ href: '/rebate', label: 'Yearly rebate' });
   if (can(s, 'tenders.view')) sales.push({ href: '/m/tenders', label: 'Tenders' });
   const money = Object.values(REQ).filter(d => can(s, d.create) || d.steps.some(st => can(s, st.perm)) || (!!d.view && can(s, d.view))).map(d => ({ href: `/r/${d.key}`, label: d.label }));
   if (can(s, 'stock.report') || can(s, 'stock.view')) money.push({ href: '/stock', label: 'Distributor stock' });
@@ -63,6 +65,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/opportunities': ['Sales opportunities', 'Approved rates not yet ordered, customers who stopped ordering, distributors running low'],
     '/expiry': ['Stock and expiry', 'Which batches will not sell before they expire, who can use them in time, and at what offer'],
     '/scheme-results': ['Scheme results', 'What each scheme sold, what it cost, and whether sales really went up'],
+    '/approvals': ['Approvals', 'Everything waiting for your decision, oldest first'],
+    '/rebate': ['Yearly rebate', 'What each distributor has earned this fiscal year and how close it is to the next slab'],
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],
@@ -73,8 +77,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   for (const e of Object.values(ENT)) titles[`/m/${e.key}`] = [e.label, e.note || `Add, edit, import and export ${e.label.toLowerCase()}`];
   // Phone: four most-used screens in a bar at the bottom, everything else behind "More".
   const have = new Set(nav.flatMap(g => g.items.map(i => i.href)));
-  const order: [string, string][] = can(s, 'scorecard.view') ? [['/dashboard', 'Home'], ['/team', 'Team'], ['/booklets', 'Approvals'], ['/alerts', 'Alerts'], ['/map', 'Map']]
-    : can(s, 'credit.manage') ? [['/dashboard', 'Home'], ['/credit', 'Credit'], ['/r/collections', 'Collections'], ['/reports', 'Reports']]
+  const order: [string, string][] = can(s, 'scorecard.view') ? [['/dashboard', 'Home'], ['/team', 'Team'], ['/approvals', 'Approvals'], ['/alerts', 'Alerts'], ['/map', 'Map']]
+    : can(s, 'credit.manage') ? [['/dashboard', 'Home'], ['/approvals', 'Approvals'], ['/credit', 'Credit'], ['/r/collections', 'Collections'], ['/reports', 'Reports']]
       : can(s, 'field.use') ? [['/field', 'Visits'], ['/opportunities', 'To sell'], ['/orders', 'Orders'], ['/booklets', 'Booklets'], ['/dashboard', 'Home']]
         : [['/dashboard', 'Home'], ['/m/employees', 'Employees'], ['/roles', 'Roles'], ['/audit', 'Audit']];
   const primary = order.filter(([h]) => have.has(h)).slice(0, 4).map(([href, label]) => ({ href, label }));

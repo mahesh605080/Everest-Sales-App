@@ -127,14 +127,30 @@ function Loss() {
   </>;
 }
 
+function Short() {
+  const [d, setD] = useState<any>(null); const [err, setErr] = useState('');
+  useEffect(() => { call('/api/expiry?shortage=1').then(setD).catch(e => setErr(e.message)); }, []);
+  if (err) return <div className="errbox" role="alert">{err}</div>;
+  if (!d) return <section className="card"><p className="sub">Comparing open orders with stock…</p></section>;
+  if (!d.rows.length) return <section className="card"><h2>No product is short</h2><p className="sub">Open orders (pending and approved, not yet dispatched) fit inside the sellable stock of every product that has stock figures.</p></section>;
+  return <>{d.rows.map((p: any) => <section className="card" key={p.product_id}>
+    <div className="hd"><div><h2>{p.product}</h2><span className="code">{p.code} · {p.stock} boxes sellable · {p.ordered} ordered</span></div><span className="pill crit">{p.short} boxes short</span></div>
+    <div className="tbl"><table><thead><tr><th>Order</th><th>Customer</th><th className="r">Usually buys / month</th><th className="r">Ordered</th><th className="r">Fair share</th></tr></thead>
+      <tbody>{p.lines.map((l: any) => <tr key={l.order_id}><td><span className="code">{l.no}</span> <span className={`pill ${l.status === 'Approved' ? 'good' : 'warn'}`}>{l.status}</span></td><td><a href={`/customers/${l.customer_id}`}><b>{l.customer}</b></a></td>
+        <td className="r num">{l.usual || '–'}</td><td className="r num">{l.qty}</td><td className="r"><b className="num">{l.share}</b>{l.share < l.qty && <><br /><span className="code">{l.qty - l.share} later</span></>}</td></tr>)}</tbody></table></div>
+  </section>)}
+    <section className="card"><p className="sub">The share follows what each customer normally buys (average of the last 90 days of dispatches), never more than it ordered. A customer with no history gets a small share of what it asked for. This is a guide for dispatch; it does not change any order.</p></section></>;
+}
+
 export default function Expiry({ canManage, canOrder, canLoss }: { canManage: boolean; canOrder: boolean; canLoss: boolean }) {
-  const tabs = [['pos', 'Expiry position'], ['slabs', 'Offer slabs'], canLoss && ['loss', 'Loss and returns'], canManage && ['upload', 'Upload stock']].filter(Boolean) as string[][];
+  const tabs = [['pos', 'Expiry position'], ['slabs', 'Offer slabs'], canLoss && ['loss', 'Loss and returns'], canManage && ['short', 'Short stock'], canManage && ['upload', 'Upload stock']].filter(Boolean) as string[][];
   const [tab, setTab] = useState('pos'); const [n, setN] = useState(0);
   return <>
     <section className="card"><div className="toolbar"><div className="l">{tabs.map(t => <button key={t[0]} className={`btn ${tab === t[0] ? 'primary' : ''}`} onClick={() => setTab(t[0])}>{t[1]}</button>)}</div></div></section>
     {tab === 'pos' && <Position key={n} canOrder={canOrder} />}
     {tab === 'slabs' && <Slabs canManage={canManage} />}
     {tab === 'loss' && <Loss />}
+    {tab === 'short' && <Short />}
     {tab === 'upload' && <Upload onDone={() => setN(x => x + 1)} />}
   </>;
 }
