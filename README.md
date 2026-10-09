@@ -97,6 +97,8 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Notifications | A bell in the top bar: approvers are told when a booklet, order, expense, claim, leave or tour plan is waiting for them, and the creator is told about every decision. Click a line to open the page |
 | Installable | The site has a web-app manifest and a small service worker, so Chrome on Android offers "Install as an app" (also in the user menu). The service worker never caches data; without network it shows a plain "no connection" page |
 | Nepali date | The top bar shows today's date in AD and BS. Booklet and order numbers take the fiscal year from the BS calendar (it turns on 1 Shrawan) |
+| Credit Control home | Their dashboard opens with orders to approve, dispatch, collections to verify, items to pay or settle, instruments expiring, total outstanding and a warning when the outstanding upload is stale |
+| Targets by Excel | On the scorecard page: download the month's targets sheet, fill it, upload it. Unknown codes and bad amounts are listed |
 | Session security | A temporary password blocks every screen and API except changing it. Changing or resetting a password, or deactivating a person, signs out all their other sessions |
 
 Sample users created by `seed -- --sample` are not forced to change their password, so testing is quick; real users added by Admin or by import always are.

@@ -46,6 +46,24 @@ export async function creditFor(s: Session, id: number) {
   if (!can(s, 'credit.manage')) await customerFor(s, id);
   return creditSnapshot(id);
 }
+/** What Credit Control has to do today, in one call. */
+export async function creditSummary() {
+  const stale = await setting('outstanding_stale_days', 10);
+  const r = await q1<any>(
+    `select (select count(*)::int from sales_orders where status='Pending') as queue,
+            (select count(*)::int from sales_orders where status='Approved') as to_dispatch,
+            (select count(*)::int from collections where status='Submitted') as collections,
+            (select count(*)::int from expenses where status='Approved') as expenses,
+            (select count(*)::int from claims where status='Approved') as claims,
+            (select count(*)::int from financial_instruments where status='Active' and expiry_date < ${TODAY}) as inst_expired,
+            (select count(*)::int from financial_instruments where status='Active' and expiry_date between ${TODAY} and ${TODAY} + 30) as inst_expiring,
+            (select coalesce(sum(total),0) from outstanding_balances) as outstanding,
+            (select coalesce(sum(b3),0) from outstanding_balances) as over90,
+            (select count(*)::int from customers c join outstanding_balances o on o.customer_id=c.id where c.active and c.credit_limit > 0 and o.total > c.credit_limit * 0.8) as near_limit,
+            (select (${TODAY} - max(as_of)) from outstanding_uploads) as upload_age`);
+  return { ...r, stale: r.upload_age == null || r.upload_age > stale };
+}
+
 export async function creditList(search: string) {
   const p: any[] = []; let w = '';
   if (search.trim()) { p.push('%' + search.trim() + '%'); w = 'and (c.name ilike $1 or c.code ilike $1 or c.town ilike $1)'; }

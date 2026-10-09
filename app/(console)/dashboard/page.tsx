@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import ControlRoom from '@/components/ControlRoom';
 import MyScore from '@/components/MyScore';
+import CreditHome from '@/components/CreditHome';
 import { getSession } from '@/lib/auth';
 import { listRows } from '@/lib/crud';
 import { q, q1 } from '@/lib/db';
@@ -44,6 +45,7 @@ export default async function Dashboard() {
     <>
       {can(s, 'scorecard.view') && <ControlRoom />}
       {!can(s, 'scorecard.view') && can(s, 'field.use') && <MyScore />}
+      {can(s, 'credit.manage') && !can(s, 'scorecard.view') && <CreditHome />}
       {can(s, 'scorecard.view') && <h2 style={{ marginTop: 8 }}>Master data health</h2>}
       <div className="g kpi">
         <KPI l={company ? 'Customers' : 'My customers'} v={cust.length} c={`${unassigned.length} not assigned to anyone`} />

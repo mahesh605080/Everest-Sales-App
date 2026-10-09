@@ -86,7 +86,7 @@ export async function saveTargets(s: Session, b: any, ip: string | null) {
     const amt = Number(i.amount), uid = Number(i.user_id);
     if (!Number.isInteger(uid) || !Number.isFinite(amt) || amt < 0) throw new HttpError(422, 'Every target must be a number, zero or more.');
     const before = await q1<any>('select amount from targets where user_id=$1 and month=$2', [uid, b.month]);
-    if (before && before.amount === amt) continue;
+    if ((before && before.amount === amt) || (!before && amt === 0)) continue;
     await q(`insert into targets(user_id,month,amount,updated_by) values($1,$2,$3,$4) on conflict(user_id,month) do update set amount=excluded.amount, updated_by=excluded.updated_by, updated_at=now()`, [uid, b.month, amt, s.id]);
     await audit(s, 'target', 'targets', uid, { month: b.month, amount: before?.amount ?? null }, { month: b.month, amount: amt }, ip); n++;
   }
@@ -118,3 +118,27 @@ export const REPORTS: Rep[] = [
   { key: 'alerts', label: 'Alert log', group: 'People', range: 'dates', run: (s, a) => { const p: any[] = [a.from, a.to]; return q(`select a.day, a.rule, a.severity, u.name as person, a.message, k.name as acknowledged_by, to_char(a.ack_at at time zone 'Asia/Kathmandu','YYYY-MM-DD HH24:MI') as acknowledged_at from alerts a left join users u on u.id=a.user_id left join users k on k.id=a.ack_by where a.day between $1::date and $2::date${scoped(s, p)} order by a.at`, p); } },
   { key: 'audit', label: 'Audit log', group: 'People', range: 'dates', perm: 'audit.view', run: (_s, a) => q(`select to_char(at at time zone 'Asia/Kathmandu','YYYY-MM-DD HH24:MI:SS') as at, user_name, action, entity, entity_id, before::text, after::text, ip from audit_logs where ${NP('at')} between $1::date and $2::date order by id limit 50000`, [a.from, a.to]) },
 ];
+
+/** Targets from a sheet with the columns "Employee code" and "Target". */
+export async function importTargets(s: Session, grid: any[][], month: string, ip: string | null) {
+  if (!okMonth(month)) throw new HttpError(422, 'Choose a month.');
+  if (grid.length < 2) throw new HttpError(422, 'The file has a header row but no data rows.');
+  const head = grid[0].map((h: any) => String(h).trim().toLowerCase()), ic = head.findIndex((h: string) => ['employee code', 'code'].includes(h)), it = head.findIndex((h: string) => ['target', 'target (rs)', 'amount'].includes(h));
+  if (ic < 0 || it < 0) throw new HttpError(422, 'Columns needed: Employee code, Target. Download the template.');
+  const users = new Map((await q<any>(`select u.id, u.code from users u join roles r on r.id=u.role_id where u.active and r.permissions ? 'field.use'`)).map(u => [String(u.code).toUpperCase(), u.id]));
+  const items: any[] = [], errors: { row: number; message: string }[] = [];
+  for (let i = 1; i < grid.length; i++) {
+    const code = String(grid[i][ic] ?? '').trim().toUpperCase(), raw = grid[i][it], amt = Number(String(raw ?? '').replace(/,/g, ''));
+    if (!code) continue;
+    if (!users.has(code)) errors.push({ row: i + 1, message: `No active field employee has the code "${code}".` });
+    else if (raw === '' || raw == null || !Number.isFinite(amt) || amt < 0) errors.push({ row: i + 1, message: 'Target must be a number, zero or more.' });
+    else items.push({ user_id: users.get(code), amount: amt });
+  }
+  const r = await saveTargets(s, { month, items }, ip);
+  return { saved: r.saved, unchanged: items.length - r.saved, failed: errors.length, errors };
+}
+export async function targetTemplateRows(month: string) {
+  if (!okMonth(month)) throw new HttpError(422, 'Choose a month.');
+  return q<any>(`select u.code as "Employee code", u.name as "Name", r.name as "Role", coalesce((select amount from targets t where t.user_id=u.id and t.month=$1),0) as "Target"
+                   from users u join roles r on r.id=u.role_id where u.active and r.permissions ? 'field.use' and r.key <> 'admin' order by u.code`, [month]);
+}

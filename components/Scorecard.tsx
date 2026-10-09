@@ -16,7 +16,10 @@ export default function Scorecard({ canTargets }: { canTargets: boolean }) {
     <section className="card">
       <div className="toolbar"><div className="l"><label className="user" htmlFor="sc-month">Month <input id="sc-month" type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} /></label>
         {d && <span className="sub">day {d.info.elapsed} of {d.info.days} · pace {pace}% · click a column to sort</span>}</div>
-        <div className="r">{canTargets && Object.keys(edit).length > 0 && <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save targets'}</button>}</div></div>
+        <div className="r">{canTargets && <><a className="btn" href={`/api/targets?month=${month}`}>Download targets sheet</a>
+          <label className="btn" style={{ cursor: 'pointer' }}>Upload targets<input id="sc-file" type="file" accept=".xlsx,.csv" hidden onChange={async e => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; const fd = new FormData(); fd.append('file', f); fd.append('month', month);
+            try { const r = await call('/api/targets', { method: 'POST', body: fd }); toast(`${r.saved} targets saved, ${r.unchanged} unchanged, ${r.failed} rows skipped.`); await load(); if (r.failed) setErr('Skipped: ' + r.errors.slice(0, 5).map((x: any) => `row ${x.row}: ${x.message}`).join(' ')); } catch (x: any) { setErr(x.message); } }} /></label></>}
+          {canTargets && Object.keys(edit).length > 0 && <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save targets'}</button>}</div></div>
       {err && <div className="errbox" role="alert">{err}</div>}
       <div className="tbl"><table><thead><tr>{th('name', 'Person')}{th('area', 'Area')}{th('target', 'Target (Rs)', true)}{th('sales', 'Approved sales', true)}{th('ach', 'Achievement')}{th('collection', 'Collection', true)}{th('visits', 'Visits', true)}{th('days_present', 'Days', true)}{th('score', 'Score', true)}{th('incentive', pace >= 100 ? 'Incentive' : 'Projected incentive', true)}</tr></thead>
         <tbody>{rows.map(r => <tr key={r.id}><td><b>{r.name}</b><br /><span className="code">{r.code} · {r.role}</span></td><td>{r.area || r.region || '–'}</td>
