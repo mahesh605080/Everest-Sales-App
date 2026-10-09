@@ -85,6 +85,7 @@ export default function Master({ ent, canEdit, canImport, canExport }: { ent: En
       setReport(r); load(); loadOpts();
     } catch (x: any) { setImpErr(x.message); } finally { setUploading(false); }
   }
+  useEffect(() => { const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setForm(null); setImp(false); } }; window.addEventListener('keydown', esc); return () => window.removeEventListener('keydown', esc); }, []);
   const pages = Math.max(1, Math.ceil(total / size));
 
   return (

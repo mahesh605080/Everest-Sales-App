@@ -59,22 +59,25 @@ function Customers() {
 }
 
 function Outstanding() {
-  const [asOf, setAsOf] = useState(nptToday()); const [rep, setRep] = useState<any>(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [ups, setUps] = useState<any[]>([]);
+  const [asOf, setAsOf] = useState(nptToday()); const [mode, setMode] = useState(''); const [rep, setRep] = useState<any>(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [ups, setUps] = useState<any[]>([]);
   const file = useRef<HTMLInputElement>(null);
   const load = useCallback(() => call('/api/credit/outstanding').then(r => setUps(r.uploads)).catch(() => {}), []);
   useEffect(() => { load(); }, [load]);
   async function upload() {
     const f = file.current?.files?.[0]; if (!f) { setErr('Choose the file exported from the accounting software.'); return; }
+    if (!mode) { setErr('Choose what the file contains.'); return; }
     setBusy(true); setErr(''); setRep(null);
-    try { const fd = new FormData(); fd.append('file', f); fd.append('as_of', asOf); setRep(await call('/api/credit/outstanding', { method: 'POST', body: fd })); load(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+    try { const fd = new FormData(); fd.append('file', f); fd.append('as_of', asOf); fd.append('mode', mode); setRep(await call('/api/credit/outstanding', { method: 'POST', body: fd })); load(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
   return <>
     <section className="card"><h2>Upload outstanding and aging</h2>
-      <p className="sub">This replaces a live link to the accounting software. Export customer-wise outstanding with aging buckets, put it in the template columns and upload it at least once a week. Customers in the file are updated; customers not in the file keep their last figures.</p>
+      <p className="sub">This replaces a live link to the accounting software. Export customer-wise outstanding with aging buckets, put it in the template columns and upload it at least once a week. </p>
+      <div className="fld" style={{ maxWidth: 560 }}><label htmlFor="os-mode">What does this file contain? *</label><select id="os-mode" value={mode} onChange={e => setMode(e.target.value)}><option value="">Select…</option>
+        <option value="full">Every customer who has a balance (customers not in the file are set to zero)</option><option value="partial">Only some customers (the others keep their last figures)</option></select></div>
       <div className="toolbar"><div className="l"><input id="os-file" ref={file} type="file" accept=".xlsx,.csv" /><label className="user" htmlFor="os-asof">Figures as of <input id="os-asof" type="date" value={asOf} max={nptToday()} onChange={e => setAsOf(e.target.value)} /></label></div>
         <div className="r"><a className="btn" href="/api/credit/outstanding?template=1">Download template</a><button className="btn primary" disabled={busy} onClick={upload}>{busy ? 'Uploading…' : 'Upload'}</button></div></div>
       {err && <div className="errbox" role="alert">{err}</div>}
-      {rep && <><div className={rep.failed ? 'banner' : 'okbox'}>{rep.updated} customers updated, {rep.failed} rows skipped.</div>
+      {rep && <><div className={rep.failed ? 'banner' : 'okbox'}>{rep.updated} customers updated, {rep.failed} rows skipped{rep.zeroed ? `, ${rep.zeroed} customers not in the file set to zero` : ''}.{rep.held ? ' Because some rows were skipped, no other customer was set to zero. Fix the rows and upload again.' : ''}</div>
         {rep.errors.length > 0 && <div className="tbl" style={{ maxHeight: 260, overflowY: 'auto' }}><table><thead><tr><th>Row</th><th>Why it was skipped</th></tr></thead><tbody>{rep.errors.map((x: any, i: number) => <tr key={i}><td className="num">{x.row}</td><td>{x.message}</td></tr>)}</tbody></table></div>}</>}
     </section>
     <section className="card"><h2>Previous uploads</h2><div className="tbl"><table><thead><tr><th>Uploaded</th><th>By</th><th>As of</th><th>File</th><th className="r">Updated</th><th className="r">Skipped</th></tr></thead>

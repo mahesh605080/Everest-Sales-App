@@ -42,7 +42,8 @@ export async function need(perm?: string | string[], opts: { allowTemporaryPassw
 }
 export async function clientIp() {
   const h = await headers();
-  return (h.get('x-forwarded-for') || '').split(',')[0].trim() || h.get('x-real-ip') || null;
+  // The last entry is the one our own reverse proxy added; earlier ones can be made up by the caller.
+  return (h.get('x-forwarded-for') || '').split(',').pop()!.trim() || h.get('x-real-ip') || null;
 }
 /** Wraps a route handler so errors always come back as { error } JSON. */
 export function api(fn: (req: Request, ctx: any) => Promise<any>) {

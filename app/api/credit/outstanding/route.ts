@@ -11,5 +11,5 @@ export const GET = api(async req => {
 export const POST = api(async req => {
   const s = await need('credit.manage'); const fd = await req.formData(); const file = fd.get('file');
   if (!(file instanceof File)) throw new HttpError(422, 'Choose a file to upload.');
-  return importOutstanding(s, file, String(fd.get('as_of') || ''), await clientIp());
+  return importOutstanding(s, file, String(fd.get('as_of') || ''), String(fd.get('mode') || ''), await clientIp());
 });

@@ -162,7 +162,10 @@ export async function setActive(ent: Entity, s: Session, id: number, active: boo
   return { id };
 }
 
-export async function options(rel: string) {
+export async function options(rel: string, s: Session) {
+  // Dropdowns obey the same territory rule as the lists.
+  if (rel === 'customers') return (await listRows(ENT.customers, s, { size: 5000 })).rows.map((x: any) => ({ id: x.id, code: x.code, name: x.name, label: `${x.name} (${x.code})` }));
+  if (rel === 'employees' && s.level < 4) return (await listRows(ENT.employees, s, { size: 5000 })).rows.map((x: any) => ({ id: x.id, code: x.code, name: x.name, area_id: x.area_id, region_id: x.region_id, label: `${x.name} (${x.code})` }));
   const r = relInfo(rel);
   const extra = rel === 'areas' ? ', region_id' : rel === 'employees' ? ', area_id, region_id' : '';
   const rows = await q(`select id, ${r.code} as code, ${r.label} as name${extra} from ${r.table} where active order by ${r.label}`);

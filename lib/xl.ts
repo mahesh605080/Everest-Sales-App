@@ -121,7 +121,8 @@ export async function importFile(ent: Entity, s: Session, file: File, ip: string
 }
 
 /** Outstanding and aging upload: the replacement for a live link to the accounting software. */
-export async function importOutstanding(s: Session, file: File, asOf: string, ip: string | null) {
+export async function importOutstanding(s: Session, file: File, asOf: string, mode: string, ip: string | null) {
+  if (mode !== 'full' && mode !== 'partial') throw new HttpError(422, 'Say whether this file lists every customer with a balance, or only some customers.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || isNaN(Date.parse(asOf))) throw new HttpError(422, 'Choose the as-of date of the figures.');
   if (Date.parse(asOf) > Date.now() + 864e5) throw new HttpError(422, 'The as-of date cannot be in the future.');
   const grid = await readGrid(file);
@@ -146,8 +147,11 @@ export async function importOutstanding(s: Session, file: File, asOf: string, ip
   for (const g of good) await q(
     `insert into outstanding_balances(customer_id,total,b0,b1,b2,b3,as_of,upload_id) values($1,$2,$3,$4,$5,$6,$7,$8)
      on conflict(customer_id) do update set total=excluded.total,b0=excluded.b0,b1=excluded.b1,b2=excluded.b2,b3=excluded.b3,as_of=excluded.as_of,upload_id=excluded.upload_id`, [...g, asOf, up[0].id]);
-  await audit(s, 'outstanding-upload', 'outstanding', up[0].id, null, { as_of: asOf, file: file.name, updated: good.length, skipped: errors.length }, ip);
-  return { updated: good.length, failed: errors.length, errors: errors.slice(0, 200) };
+  // A full file is the whole truth: a customer who is not in it owes nothing as of that date.
+  let zeroed = 0;
+  if (mode === 'full' && !errors.length) zeroed = (await q(`update outstanding_balances set total=0,b0=0,b1=0,b2=0,b3=0,as_of=$1,upload_id=$2 where upload_id <> $2 and total <> 0 returning customer_id`, [asOf, up[0].id])).length;
+  await audit(s, 'outstanding-upload', 'outstanding', up[0].id, null, { as_of: asOf, file: file.name, mode, updated: good.length, skipped: errors.length, set_to_zero: zeroed }, ip);
+  return { updated: good.length, failed: errors.length, zeroed, held: mode === 'full' && errors.length > 0, errors: errors.slice(0, 200) };
 }
 export async function outstandingTemplate() {
   const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Outstanding');

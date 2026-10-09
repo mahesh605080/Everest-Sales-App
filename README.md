@@ -91,7 +91,7 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Order print | "Print or save as PDF" on every sales order opens a clean page for the browser's print dialog |
 | Revise a booklet | A sent-back booklet has a Revise button that reopens it with its lines filled in; submitting creates a new booklet number |
 | Scheduled alerts | `GET /api/cron/alerts?key=CRON_SECRET` runs the rules without anyone logged in. Point any scheduler at it every 5 minutes |
-| Smoke test | `npm run smoke` runs 63 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
+| Smoke test | `npm run smoke` runs 67 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
 | Free local testing | `docker-compose.local.yml` and `LOCAL-TESTING.md` run everything on one computer with sample data |
 
 | Notifications | A bell in the top bar: approvers are told when a booklet, order, expense, claim, leave or tour plan is waiting for them, and the creator is told about every decision. Click a line to open the page |
@@ -100,6 +100,19 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Credit Control home | Their dashboard opens with orders to approve, dispatch, collections to verify, items to pay or settle, instruments expiring, total outstanding and a warning when the outstanding upload is stale |
 | Targets by Excel | On the scorecard page: download the month's targets sheet, fill it, upload it. Unknown codes and bad amounts are listed |
 | Session security | A temporary password blocks every screen and API except changing it. Changing or resetting a password, or deactivating a person, signs out all their other sessions |
+
+## Audit fixes (hardening)
+
+| Finding | Fix |
+| --- | --- |
+| Dropdown API showed every customer and employee to a Sales Officer | Dropdowns now use the same territory rule as the lists |
+| A customer missing from a later outstanding file kept the old balance | The upload asks whether the file is the full list; with a clean full file, customers not in it are set to zero |
+| Two simultaneous orders could overdraw a booklet or both pass the credit check | Order creation and approval take a per-customer lock |
+| No limit on wrong logins from one network | 20 wrong logins per address per 15 minutes (`LOGIN_MAX_FAILS_PER_IP`), on top of the per-user lock |
+| Unlimited photo uploads; location points never removed | 60 photos per person per day; unattached photos removed after 2 days; location points kept for `location_retention_days` |
+| No security headers | Content-Security-Policy, frame, sniffing, referrer and permissions headers; HSTS in production |
+| Escalation setting did nothing | A waiting booklet or order is escalated to the next level after `approval_escalation_hours`; the unused reminder setting was removed |
+| No own error pages or health check | Custom not-found and error pages; `GET /api/health` |
 
 Sample users created by `seed -- --sample` are not forced to change their password, so testing is quick; real users added by Admin or by import always are.
 

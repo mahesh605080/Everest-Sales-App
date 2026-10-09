@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { q, q1, pool } from './db';
 import { HttpError } from './auth';
 import { audit } from './audit';
@@ -17,6 +18,12 @@ const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 const nptDate = async () => (await q1<any>(`select ${TODAY}::text as d`))!.d as string;
 const trail = (type: string, id: number, s: Session, level: string | null, action: string, remarks?: string) =>
   q('insert into approvals(doc_type,doc_id,level,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6,$7)', [type, id, level, s.id, s.name, action, remarks || null]);
+/** Serialises everything that reads and then changes one customer's credit or booklet balance. */
+async function lockedFor<T>(customerId: number, fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  const c = await pool.connect();
+  try { await c.query('begin'); await c.query('select pg_advisory_xact_lock(4711, $1)', [customerId]); const r = await fn(c); await c.query('commit'); return r; }
+  catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
+}
 const getTrail = (type: string, id: number) => q<any>('select level,user_name,action,remarks,at from approvals where doc_type=$1 and doc_id=$2 order by at, id', [type, id]);
 
 async function customerFor(s: Session, id: number) {
@@ -254,6 +261,7 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
   const cust = await customerFor(s, Number(body.customer_id)), today = await nptDate();
   const lines: any[] = (Array.isArray(body.items) ? body.items : []).filter((l: any) => Number(l.qty) > 0);
   if (!lines.length) throw new HttpError(422, 'Add at least one product with a quantity.');
+  const out = await lockedFor(cust.id, async c => {
   let bk: any = null, bkItems: any[] = [];
   if (body.booklet_id) {
     bk = await q1<any>(`select * from booklets where id=$1 and customer_id=$2 and status='Accepted'`, [Number(body.booklet_id), cust.id]);
@@ -280,9 +288,7 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
   const credit = await creditSnapshot(cust.id), over = value > credit.available;
   const term = body.payment_term_id ? await q1<any>('select id from payment_terms where id=$1 and active', [Number(body.payment_term_id)]) : null;
   const txt = (v: any, n: number) => String(v || '').trim().slice(0, n) || null;
-  const c = await pool.connect();
-  try {
-    await c.query('begin');
+  {
     const seq = (await c.query(`select nextval('sales_order_no_seq') n`)).rows[0].n, no = `SO-${fyLabel(today)}-${String(seq).padStart(4, '0')}`;
     const o = (await c.query(
       `insert into sales_orders(no,user_id,customer_id,booklet_id,order_date,payment_term_id,delivery_address,contact_person,contact_phone,transport,transporter,vehicle_no,remarks,value,over_limit)
@@ -291,12 +297,14 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
         txt(body.contact_phone, 30) ?? cust.phone ?? null, body.transport === 'Customer' ? 'Customer' : 'Company', txt(body.transporter, 100), txt(body.vehicle_no, 30), txt(body.remarks, 500), value, over])).rows[0];
     for (const i of items) await c.query('insert into sales_order_items(order_id,product_id,qty,units_per_box,rate,value) values($1,$2,$3,$4,$5,$6)', [o.id, i.p.id, i.qty, i.p.units_per_box, i.rate, i.v]);
     await c.query('insert into approvals(doc_type,doc_id,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6)', ['order', o.id, s.id, s.name, 'Submitted', over ? 'Over credit limit at submission' : null]);
-    await c.query('commit');
-    await audit(s, 'create', 'sales_orders', o.id, null, { no, customer: cust.name, value, over_limit: over }, ip);
-    await notify(await withPerm('credit.manage'), `Sales order ${no} is waiting${over ? ' (over limit)' : ''}`, `${s.name} · ${cust.name} · Rs ${Math.round(value).toLocaleString('en-IN')}`, '/credit');
-    return { id: o.id, no, value, over_limit: over, dda_expired: credit.dda_expired };
-  } catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
+    return { id: o.id as number, no, value, over_limit: over, dda_expired: credit.dda_expired as boolean, customer: cust.name as string };
+  }
+  });
+  await audit(s, 'create', 'sales_orders', out.id, null, { no: out.no, customer: out.customer, value: out.value, over_limit: out.over_limit }, ip);
+  await notify(await withPerm('credit.manage'), `Sales order ${out.no} is waiting${out.over_limit ? ' (over limit)' : ''}`, `${s.name} · ${out.customer} · Rs ${Math.round(out.value).toLocaleString('en-IN')}`, '/credit');
+  return out;
 }
+
 
 export async function actOrder(s: Session, id: number, b: any, ip: string | null) {
   const o = await orderVisible(s, id), remarks = String(b.remarks || '').trim().slice(0, 500);
@@ -309,11 +317,17 @@ export async function actOrder(s: Session, id: number, b: any, ip: string | null
     if (o.status !== 'Pending') throw new HttpError(409, 'This order is no longer pending.');
     if (b.action === 'reject') { if (!remarks) throw new HttpError(422, 'Remarks are needed to reject.'); status = 'Rejected'; action = 'Rejected'; }
     else {
-      const credit = await creditSnapshot(o.customer_id);
-      if (o.value > credit.available && !remarks) throw new HttpError(422, 'This order is over the credit limit. Name the instrument or director approval that covers it in the remarks.');
-      status = 'Approved'; action = o.value > credit.available ? 'Approved over limit' : 'Approved';
+      // Two approvals for the same customer are checked one after the other, never both against the same free credit.
+      action = await lockedFor(o.customer_id, async c => {
+        const credit = await creditSnapshot(o.customer_id), over = o.value > credit.available;
+        if (over && !remarks) throw new HttpError(422, 'This order is over the credit limit. Name the instrument or director approval that covers it in the remarks.');
+        const done = await c.query(`update sales_orders set status='Approved', decided_by=$1, decided_at=now(), updated_at=now() where id=$2 and status='Pending'`, [s.id, id]);
+        if (!done.rowCount) throw new HttpError(409, 'Someone else has just decided this order.');
+        return over ? 'Approved over limit' : 'Approved';
+      });
+      status = 'Approved';
     }
-    await q('update sales_orders set decided_by=$1, decided_at=now() where id=$2', [s.id, id]);
+    if (status === 'Rejected') await q('update sales_orders set decided_by=$1, decided_at=now() where id=$2', [s.id, id]);
   } else if (b.action === 'dispatch') {
     if (!can(s, 'dispatch.manage')) throw new HttpError(403, 'Your role cannot mark orders dispatched.');
     if (o.status !== 'Approved') throw new HttpError(409, 'Only an approved order can be dispatched.');

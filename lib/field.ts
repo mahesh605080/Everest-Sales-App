@@ -2,6 +2,7 @@ import { q, q1 } from './db';
 import { HttpError } from './auth';
 import { audit } from './audit';
 import { Session } from './perm';
+import { notify, roleInTerritory } from './notify';
 
 /** All "today" logic uses Nepal time, whatever the server clock is set to. */
 export const NPT = `(now() at time zone 'Asia/Kathmandu')`;
@@ -147,6 +148,17 @@ export async function visitReport(s: Session, from: string, to: string) {
       where v.day between $1::date and $2::date${scope} order by v.in_at desc limit 2000`, params);
 }
 
+let lastTidy = 0;
+/** Housekeeping, at most every six hours: old location points and photos that were uploaded but never attached to anything. */
+async function tidy() {
+  if (Date.now() - lastTidy < 6 * 3600000) return; lastTidy = Date.now();
+  const days = Math.max(30, Math.round(await setting('location_retention_days', 180)));
+  await q(`delete from location_pings where at < now() - ($1::int * interval '1 day')`, [days]);
+  await q(`delete from photos p where p.at < now() - interval '2 days'
+             and not exists(select 1 from attendance x where x.in_photo_id=p.id) and not exists(select 1 from collections x where x.photo_id=p.id)
+             and not exists(select 1 from expenses x where x.photo_id=p.id) and not exists(select 1 from claims x where x.photo_id=p.id) and not exists(select 1 from competitor_info x where x.photo_id=p.id)`);
+}
+
 let lastRun = 0;
 /** Evaluates the time-based rules. Cheap and idempotent: every alert has a unique key, so repeats are ignored. */
 export async function runAlerts(force = false) {
@@ -156,6 +168,7 @@ export async function runAlerts(force = false) {
   const field = `u.active and r.permissions ? 'field.use' and r.key <> 'admin'`;
 
   // Days left open are closed at midnight and reported.
+  await tidy().catch(e => console.error('tidy failed', e));
   const closed = await q<any>(`update attendance set out_at = (day + 1)::timestamp at time zone 'Asia/Kathmandu', auto_closed = true where out_at is null and day < ${TODAY} returning user_id, day`);
   await q(`update visits set out_at = (day + 1)::timestamp at time zone 'Asia/Kathmandu', remarks = coalesce(remarks, 'Closed automatically at midnight') where out_at is null and day < ${TODAY}`);
   if (rules.missed_checkout?.enabled) for (const c of closed)
@@ -192,6 +205,21 @@ export async function runAlerts(force = false) {
              select 'approval_wait','info',o.user_id,o.customer_id,'Sales order '||o.no||' has waited '||floor(extract(epoch from now()-o.created_at)/3600)::int||' hours for Credit Control.',${TODAY},'approval_wait:o:'||o.id
                from sales_orders o where o.status='Pending' and o.created_at < now() - ($1::int * interval '1 hour') on conflict(key) do nothing`, [h]);
   }
+  // Still waiting after the escalation hours in Settings: tell the next level up, once per booklet level / order.
+  if (rules.approval_escalation?.enabled) {
+    const eh = Math.max(1, Math.round(await setting('approval_escalation_hours', 48)));
+    const late = await q<any>(`insert into alerts(rule,severity,user_id,customer_id,message,day,key)
+        select 'approval_escalation','warn',b.user_id,b.customer_id,'Booklet '||b.no||' has waited '||floor(extract(epoch from now()-b.updated_at)/3600)::int||' hours at '||upper(b.level)||'. Escalated.',${TODAY},'approval_escalation:b:'||b.id||':'||b.level
+          from booklets b where b.status='Pending' and b.updated_at < now() - ($1::int * interval '1 hour') on conflict(key) do nothing returning user_id, message, key`, [eh]);
+    for (const l of late) {
+      const level = l.key.split(':').pop(), up = level === 'asm' ? 'rsm' : 'gm';
+      await notify(await roleInTerritory(up, l.user_id), 'Escalation: booklet approval is overdue', l.message, '/booklets');
+    }
+    const lateO = await q<any>(`insert into alerts(rule,severity,user_id,customer_id,message,day,key)
+        select 'approval_escalation','warn',o.user_id,o.customer_id,'Sales order '||o.no||' has waited '||floor(extract(epoch from now()-o.created_at)/3600)::int||' hours for Credit Control. Escalated.',${TODAY},'approval_escalation:o:'||o.id
+          from sales_orders o where o.status='Pending' and o.created_at < now() - ($1::int * interval '1 hour') on conflict(key) do nothing returning user_id, message`, [eh]);
+    for (const l of lateO) await notify(await roleInTerritory('gm', l.user_id), 'Escalation: sales order approval is overdue', l.message, '/orders');
+  }
   if (rules.instrument_expiry?.enabled) await q(
     `insert into alerts(rule,severity,user_id,customer_id,message,day,key)
      select 'instrument_expiry','warn',ca.user_id,f.customer_id,f.type||' '||coalesce(f.ref_no,'')||' of '||c.name||' (Rs '||to_char(f.amount,'FM99,99,99,99,990')||') '||case when f.expiry_date < ${TODAY} then 'expired on ' else 'expires on ' end||f.expiry_date||'.',${TODAY},'instrument_expiry:'||f.id||':'||f.expiry_date
@@ -211,7 +239,7 @@ export async function runAlerts(force = false) {
 
 export async function listAlerts(s: Session, open: boolean) {
   await runAlerts();
-  const params: any[] = []; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait')` : teamScope(s, params);
+  const params: any[] = []; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait','approval_escalation')` : teamScope(s, params);
   return q<any>(
     `select a.id,a.rule,a.severity,a.message,a.day,a.at,a.ack_at,u.name as person,u.code as person_code,ar.name as area,k.name as ack_by
        from alerts a left join users u on u.id=a.user_id left join areas ar on ar.id=u.area_id left join users k on k.id=a.ack_by
@@ -220,7 +248,7 @@ export async function listAlerts(s: Session, open: boolean) {
 }
 
 export async function ackAlert(s: Session, id: number) {
-  const params: any[] = [id]; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait')` : teamScope(s, params);
+  const params: any[] = [id]; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait','approval_escalation')` : teamScope(s, params);
   const ok = await q1<any>(`select a.id from alerts a left join users u on u.id=a.user_id where a.id=$1 and a.ack_at is null${scope}`, params);
   if (!ok) throw new HttpError(404, 'This alert is already acknowledged or is outside your team.');
   await q('update alerts set ack_by=$1, ack_at=now() where id=$2', [s.id, id]);

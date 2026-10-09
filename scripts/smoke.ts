@@ -64,11 +64,12 @@ async function main() {
 
   // credit data
   if (admin.cookie || true) {
-    const fd = new FormData(); fd.append('as_of', new Date().toISOString().slice(0, 10));
+    const fd = new FormData(); fd.append('as_of', new Date().toISOString().slice(0, 10)); fd.append('mode', 'partial');
     fd.append('file', new Blob([`Customer code,Total outstanding,0-30,31-60,61-90,Above 90\nD-1001,820000,520000,210000,90000,0\nD-1002,940000,300000,280000,210000,150000\nD-9999,1,1,0,0,0\n`], { type: 'text/csv' }), 'outstanding.csv');
     const up = await (await fetch(`${BASE}/api/credit/outstanding`, { method: 'POST', headers: { cookie: cc.cookie }, body: fd })).json();
     ok('outstanding upload updates known customers and lists the unknown one', up.updated === 2 && up.failed === 1, up);
   }
+  ok('dropdown lists obey the territory rule', (await so.get('/api/m/customers/options')).data.options.length === mine.total && (await so.get('/api/m/employees/options')).data.options.length === 1);
   const cr = (await so.get(`/api/credit?customer=${c1.id}`)).data.credit;
   ok('credit position shows uploaded outstanding', cr.outstanding === 820000 && cr.available === cr.credit_limit - 820000 + cr.collected - cr.committed, cr);
 
@@ -129,6 +130,18 @@ async function main() {
   ok('report downloads as Excel', rep.status === 200 && (rep.data as ArrayBuffer).byteLength > 3000);
   ok('credit report is hidden from sales managers', (await gm.get('/api/reports/credit')).status === 404);
   ok('end of day', (await so.post('/api/field/checkout', { actual: 95000, ...here })).status === 200);
+
+  // two orders racing for the last boxes of a booklet: only one may win
+  const race = (await so.post('/api/booklets', { customer_id: c1.id, due_date: due, items: [{ product_id: ns.id, qty: 10, ask_rate: ns.trade_rate * 0.99, remarks: 'Race test' }] })).data;
+  await asm.post(`/api/booklets/${race.id}`, { action: 'approve' });
+  const both = await Promise.all([1, 2, 3, 4].map(() => so.post('/api/orders', { customer_id: c1.id, booklet_id: race.id, items: [{ product_id: ns.id, qty: 10 }] })));
+  ok('simultaneous orders cannot overdraw a booklet', both.filter(r => r.status === 200).length === 1, both.map(r => r.status));
+  // a full outstanding file sets customers that are not in it to zero
+  { const fd = new FormData(); fd.append('as_of', new Date().toISOString().slice(0, 10)); fd.append('mode', 'full');
+    fd.append('file', new Blob([`Customer code,Total outstanding,0-30,31-60,61-90,Above 90\nD-1001,500000,500000,0,0,0\n`], { type: 'text/csv' }), 'full.csv');
+    const up = await (await fetch(`${BASE}/api/credit/outstanding`, { method: 'POST', headers: { cookie: cc.cookie }, body: fd })).json();
+    ok('a full outstanding file zeroes customers that are not in it', up.updated === 1 && up.zeroed === 1 && (await so2.get(`/api/credit?customer=${other.id}`)).data.credit.outstanding === 0, up); }
+  ok('health check answers', (await fetch(`${BASE}/api/health`)).status === 200);
 
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
