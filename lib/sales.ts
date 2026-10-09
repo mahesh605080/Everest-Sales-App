@@ -9,7 +9,7 @@ import { can, Session } from './perm';
 import { fyLabel } from './bs';
 import { notify, roleInTerritory, withPerm } from './notify';
 import { filterSql, ListFilter } from './filters';
-import { batchOffer, fefoForOrder } from './inventory';
+import { batchOffer, dispatched, fefoForOrder, recordDispatch } from './inventory';
 import { bestScheme, pricesFor, schemesFor } from './pricing';
 
 export { fyLabel };
@@ -258,6 +258,7 @@ export async function getOrder(s: Session, id: number) {
   const o = await orderVisible(s, id), credit = await creditSnapshot(o.customer_id);
   const items = await q<any>('select i.*, p.code as product_code, p.name as product, p.generic_name, p.pack_size from sales_order_items i join products p on p.id=i.product_id where i.order_id=$1 order by i.id', [id]);
   if (o.status === 'Approved' || o.status === 'Pending') await fefoForOrder(items);
+  if (o.status === 'Dispatched') { const sent = await dispatched(id); for (const i of items) i.sent = sent.filter(x => x.order_item_id === i.id); }
   return { order: { ...o, over_now: o.status === 'Pending' && o.value > credit.available }, items, trail: await getTrail('order', id), credit,
     canDecide: o.status === 'Pending' && can(s, 'credit.manage'), canWithdraw: o.status === 'Pending' && o.user_id === s.id, canDispatch: o.status === 'Approved' && can(s, 'dispatch.manage') };
 }
@@ -355,9 +356,7 @@ export async function actOrder(s: Session, id: number, b: any, ip: string | null
     if (!can(s, 'dispatch.manage')) throw new HttpError(403, 'Your role cannot mark orders dispatched.');
     if (o.status !== 'Approved') throw new HttpError(409, 'Only an approved order can be dispatched.');
     status = 'Dispatched'; action = 'Dispatched';
-    // Record which batches the FEFO plan said to send, so a later returns claim can be checked against them.
-    const its = await fefoForOrder(await q<any>('select id, product_id, qty, batch_no from sales_order_items where order_id=$1', [id]));
-    for (const it of its) if (it.fefo) await q('update sales_order_items set batch_no=$1, expiry_date=$2 where id=$3', [it.fefo.plan.map((x: any) => `${x.batch_no} x${x.qty}`).join(', ').slice(0, 200), it.fefo.plan[0].expiry_date, it.id]);
+    await recordDispatch(id, o.customer_id);
     await q('update sales_orders set invoice_no=$1, dispatched_by=$2, dispatched_at=now() where id=$3', [String(b.invoice_no || '').trim().slice(0, 40) || null, s.id, id]);
   } else throw new HttpError(422, 'Unknown action.');
   await q('update sales_orders set status=$1, updated_at=now() where id=$2', [status, id]);

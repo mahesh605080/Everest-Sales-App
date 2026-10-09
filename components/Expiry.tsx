@@ -37,6 +37,8 @@ function Position({ canOrder }: { canOrder: boolean }) {
       <div className="card"><div className="lab">Stock value</div><div className="big">{sh(d.total_value)}</div><div className="ctx">at trade rate · as of {d.as_of}</div></div>
       <div className="card"><div className="lab">With an offer price</div><div className="big">{d.rows.filter((b: any) => b.offer).length}</div><div className="ctx">batches inside an offer slab</div></div>
     </div>
+    {d.running_out.length > 0 && <section className="card" style={{ borderColor: 'var(--warn-fill)' }}><div className="hd"><div><h2>Running out</h2><span className="sub">sellable stock covers fewer than {d.stockout_days} days of sale: plan production or expect lost orders</span></div></div>
+      <div className="toolbar"><div className="l">{d.running_out.map((x: any) => <span key={x.product_id} className={`pill ${x.cover_days <= 7 ? 'crit' : 'warn'}`}>{x.product}: {x.free} boxes · {x.cover_days} days</span>)}</div></div></section>}
     <section className="card"><div className="hd"><h2>Stock by time to expiry</h2><span className="sub">value at trade rate</span></div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{d.ladder.map((l: any) => <div key={l.label}><div className="hd"><span>{l.label} <span className="code">{l.batches} batches · {l.boxes} boxes</span></span><span className="num">{sh(l.value)}</span></div>
         <div style={{ height: 12, background: 'var(--sunk)', borderRadius: 4 }}><div style={{ height: '100%', width: `${l.value / mx * 100}%`, borderRadius: '0 4px 4px 0', background: l.k === 'crit' ? 'var(--crit-fill)' : l.k === 'warn' ? 'var(--warn-fill)' : l.k === 'good' ? 'var(--good-fill)' : 'var(--accent2)' }} /></div></div>)}</div></section>

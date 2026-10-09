@@ -88,13 +88,13 @@ const offerFor = (slabs: any[], months: number, trade: number) => {
 };
 
 /* ---------------- stock position ---------------- */
-/** Every batch in stock with what is still free to sell: uploaded quantity minus what has been ordered against it since the upload. */
+/** Every batch in stock with what is still free to sell: the quantity in the godown (uploads, less dispatches since) minus near-expiry lot orders not yet dispatched. */
 async function batches(productId?: number) {
   return q<any>(
     `select b.id, b.product_id, b.batch_no, b.expiry_date, b.location, b.as_of, b.qty_boxes, p.code, p.name as product, p.pack_size, p.units_per_box, p.trade_rate,
             round(((b.expiry_date - ${TODAY})::numeric / ${MONTH}), 1) as months_left,
             greatest(b.qty_boxes - coalesce((select sum(i.qty) from sales_order_items i join sales_orders o on o.id=i.order_id
-                                             where i.batch_id=b.id and o.created_at > b.updated_at and o.status not in ('Rejected','Withdrawn')),0), 0)::int as free_boxes
+                                             where i.batch_id=b.id and o.status in ('Pending','Approved')),0), 0)::int as free_boxes
        from stock_batches b join products p on p.id=b.product_id
       where b.qty_boxes > 0 ${productId ? 'and b.product_id=$1' : ''} order by b.expiry_date, b.id`, productId ? [productId] : []);
 }
@@ -122,7 +122,11 @@ export async function expiryPosition() {
   }
   const bucket = (lo: number, hi: number) => { const x = rows.filter(b => b.months_left > lo && b.months_left <= hi); return { boxes: x.reduce((a, b) => a + b.free_boxes, 0), value: x.reduce((a, b) => a + b.value, 0), batches: x.length }; };
   const exp = rows.filter(b => b.expired);
-  return { rows, min_shelf: minShelf, near_months: near, as_of: rows.reduce((a: string | null, b) => (!a || b.as_of > a ? b.as_of : a), null),
+  // Products about to run out: sellable stock against the monthly sale. Running out loses sales just as expiry loses stock.
+  const warn = await setting('stockout_warning_days', 30), byProd = new Map<number, any>();
+  for (const b of rows) { const x = byProd.get(b.product_id) || { product_id: b.product_id, product: b.product, code: b.code, free: 0, run_rate: b.run_rate }; if (!b.expired && !b.unsellable) x.free += b.free_boxes; byProd.set(b.product_id, x); }
+  const running_out = [...byProd.values()].filter(x => x.run_rate > 0 && x.free / x.run_rate * 30 < warn).map(x => ({ ...x, cover_days: Math.round(x.free / x.run_rate * 30) })).sort((a, b) => a.cover_days - b.cover_days);
+  return { rows, running_out, stockout_days: warn, min_shelf: minShelf, near_months: near, as_of: rows.reduce((a: string | null, b) => (!a || b.as_of > a ? b.as_of : a), null),
     ladder: [{ label: 'Expired', ...{ boxes: exp.reduce((a, b) => a + b.free_boxes, 0), value: exp.reduce((a, b) => a + b.value, 0), batches: exp.length }, k: 'crit' },
       { label: '0 to 3 months', ...bucket(0, 3), k: 'crit' }, { label: '3 to 6 months', ...bucket(3, 6), k: 'warn' }, { label: '6 to 9 months', ...bucket(6, 9), k: 'info' },
       { label: '9 to 12 months', ...bucket(9, 12), k: '' }, { label: 'Over 12 months', ...bucket(12, 999), k: 'good' }],
@@ -172,8 +176,8 @@ export async function expiryOpportunities(s: Session) {
 /** Which batches to send for an ordinary order line: earliest expiry first, skipping stock that is too short-dated. */
 export async function fefoPlan(productId: number, qty: number, minMonths: number, rows?: any[]) {
   const list = (rows || await batches(productId)).filter(b => b.product_id === productId && b.months_left >= minMonths && b.free_boxes > 0);
-  const plan: { batch_no: string; expiry_date: string; qty: number }[] = []; let left = qty;
-  for (const b of list) { if (left <= 0) break; const take = Math.min(left, b.free_boxes); plan.push({ batch_no: b.batch_no, expiry_date: b.expiry_date, qty: take }); left -= take; }
+  const plan: { batch_id: number; batch_no: string; expiry_date: string; qty: number }[] = []; let left = qty;
+  for (const b of list) { if (left <= 0) break; const take = Math.min(left, b.free_boxes); plan.push({ batch_id: b.id, batch_no: b.batch_no, expiry_date: b.expiry_date, qty: take }); left -= take; b.free_boxes -= take; }
   return { plan, short: left };
 }
 export async function fefoForOrder(items: any[]) {
@@ -196,3 +200,22 @@ export async function customerFor(s: Session, id: number) {
   if (!c || !c.active) throw new HttpError(403, 'This customer is not in your territory.');
   return c;
 }
+
+/**
+ * Dispatch: write down which batches left with each line and take them out of the godown stock.
+ * A near-expiry lot line takes its own batch; every other line follows the earliest-expiry-first plan.
+ */
+export async function recordDispatch(orderId: number, customerId: number) {
+  const items = await q<any>('select id, product_id, qty, free_qty, batch_id, batch_no, expiry_date from sales_order_items where order_id=$1 order by id', [orderId]);
+  const all = await batches(), minShelf = await setting('min_shelf_life_months', 2);
+  for (const it of items) {
+    const plan = it.batch_id ? [{ batch_id: it.batch_id, batch_no: it.batch_no, expiry_date: it.expiry_date, qty: it.qty }] : (await fefoPlan(it.product_id, it.qty + (it.free_qty || 0), minShelf, all)).plan;
+    for (const x of plan) {
+      await q('insert into dispatch_batches(order_id,order_item_id,customer_id,product_id,batch_id,batch_no,expiry_date,qty) values($1,$2,$3,$4,$5,$6,$7,$8)', [orderId, it.id, customerId, it.product_id, x.batch_id, x.batch_no, x.expiry_date, x.qty]);
+      // updated_at is left alone on purpose: it marks the last upload, not the last movement.
+      await q('update stock_batches set qty_boxes = greatest(qty_boxes - $1, 0) where id=$2', [x.qty, x.batch_id]);
+    }
+    if (!it.batch_id && plan.length) await q('update sales_order_items set batch_no=$1, expiry_date=$2 where id=$3', [plan.map(x => `${x.batch_no} x${x.qty}`).join(', ').slice(0, 200), plan[0].expiry_date, it.id]);
+  }
+}
+export const dispatched = (orderId: number) => q<any>('select order_item_id, batch_no, expiry_date, qty from dispatch_batches where order_id=$1 order by id', [orderId]);

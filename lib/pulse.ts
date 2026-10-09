@@ -15,6 +15,7 @@ export async function pulse(s: Session) {
   if (can(s, 'inventory.view')) {
     const pos = await expiryPosition();
     out.push({ k: 'risk', label: 'Stock that will not sell in time', value: pos.at_risk_value, money: true, sub: `${pos.at_risk_boxes} boxes · ${pos.rows.filter(b => b.offer).length} batches on offer`, href: '/expiry', tone: pos.at_risk_value > 0 ? 'crit' : '' });
+    if (pos.running_out.length) out.push({ k: 'out', label: 'Products running out', value: pos.running_out.length, sub: pos.running_out.slice(0, 2).map((x: any) => `${x.product} (${x.cover_days} days)`).join(', '), href: '/expiry', tone: 'warn' });
     if (can(s, 'inventory.manage')) { const sh = await shortage(); out.push({ k: 'short', label: 'Products short of open orders', value: sh.rows.length, sub: sh.rows.length ? sh.rows.slice(0, 2).map(r => r.product).join(', ') : 'stock covers every open order', href: '/expiry', tone: sh.rows.length ? 'warn' : '' }); }
   }
   if (can(s, 'scorecard.view') || can(s, 'claims.settle')) {

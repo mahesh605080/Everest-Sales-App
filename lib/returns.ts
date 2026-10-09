@@ -43,7 +43,11 @@ export async function checkClaim(v: any): Promise<Flag[]> {
     // Did the company make this batch, and did it go to this customer?
     const known = await q1<any>('select expiry_date from stock_batches where product_id=$1 and upper(batch_no)=upper($2) limit 1', [v.product_id, v.batch_no]);
     if (known && known.expiry_date !== v.expiry_date) flags.push({ k: 'expiry_mismatch', text: `Company record shows batch ${v.batch_no} expiring on ${known.expiry_date}, the claim says ${v.expiry_date}.` });
-    const sent = await q1<any>(`select o.no from sales_order_items i join sales_orders o on o.id=i.order_id where o.customer_id=$1 and i.product_id=$2 and o.status='Dispatched' and upper(i.batch_no) like '%'||upper($3)||'%' limit 1`, [v.customer_id, v.product_id, v.batch_no]);
+    const sent = await q1<any>(`select 1 from dispatch_batches d where d.customer_id=$1 and d.product_id=$2 and upper(d.batch_no)=upper($3) limit 1`, [v.customer_id, v.product_id, v.batch_no]);
+    if (sent) { // more boxes claimed than were ever sent of this batch
+      const tot = Number((await q1<any>('select coalesce(sum(qty),0) n from dispatch_batches where customer_id=$1 and product_id=$2 and upper(batch_no)=upper($3)', [v.customer_id, v.product_id, v.batch_no]))!.n);
+      if (v.qty > tot) flags.push({ k: 'more_than_sent', text: `Only ${tot} boxes of batch ${v.batch_no} were dispatched to this customer; the claim is for ${v.qty}.` });
+    }
     if (!sent) {
       const any = await q1<any>(`select 1 from sales_order_items i join sales_orders o on o.id=i.order_id where o.customer_id=$1 and i.product_id=$2 and o.status in ('Approved','Dispatched') limit 1`, [v.customer_id, v.product_id]);
       flags.push(any ? { k: 'batch_not_traced', text: `No dispatch of batch ${v.batch_no} to this customer is on record. Check the invoice before approving.` }

@@ -276,6 +276,22 @@ async function main() {
     ok("a booklet at the customer's price-list rate is not below base", bkl.final_level === 'asm', bkl);
   }
 
+  // dispatch takes batches out of stock; money and cross-sell actions; stock-out list
+  { const pos0 = (await gm.get('/api/expiry')).data, A0 = pos0.rows.find((b: any) => b.batch_no === 'NS-A');
+    ok('the expiry position lists products running out', Array.isArray(pos0.running_out) && pos0.stockout_days === 30);
+    const od = (await so.post('/api/orders', { customer_id: c1.id, items: [{ product_id: ns.id, qty: 20 }] })).data;
+    await cc.post(`/api/orders/${od.id}`, { action: 'approve', remarks: 'Covered by PDC' });
+    ok('dispatching an order works', (await cc.post(`/api/orders/${od.id}`, { action: 'dispatch', invoice_no: 'INV-B1' })).data.status === 'Dispatched');
+    const det = (await so.get(`/api/orders/${od.id}`)).data.items[0], A1 = (await gm.get(`/api/expiry?batch=${A0.id}`)).data.batch;
+    ok('dispatch records the batch sent and takes it out of stock', det.sent?.[0]?.batch_no === 'NS-A' && det.sent[0].qty === 20 && A1.qty_boxes === A0.qty_boxes - 20 && A1.free_boxes === A0.free_boxes - 20, [det.sent, A0.qty_boxes, A1.qty_boxes, A0.free_boxes, A1.free_boxes]);
+    const mineO = (await so.get('/api/orders?box=mine&status=Approved')).data.orders; let lotO: any = null;
+    for (const o of mineO) { const d = (await so.get(`/api/orders/${o.id}`)).data; if (d.items[0].non_returnable) lotO = d; }
+    ok('a near-expiry lot is dispatched from its own batch without changing what is free', lotO && (await cc.post(`/api/orders/${lotO.order.id}`, { action: 'dispatch' })).data.status === 'Dispatched' && (await gm.get(`/api/expiry?batch=${A0.id}`)).data.batch.free_boxes === A1.free_boxes && (await gm.get(`/api/expiry?batch=${A0.id}`)).data.batch.qty_boxes === A1.qty_boxes - 50, lotO?.order);
+    const acts = (await so.get('/api/sales/actions')).data.actions;
+    ok('an order held for credit becomes a "collect payment" action', acts.some((a: any) => a.key === `col:${c1.id}` && a.kind === 'Collect payment'), acts.map((a: any) => a.key));
+    ok('the collect action can be answered', (await so.post('/api/sales/actions', { key: `col:${c1.id}`, outcome: 'later' })).status === 200);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

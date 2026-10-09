@@ -11,8 +11,8 @@ Attendance, leave and expense claims are deliberately not part of this app.
 ### Selling
 | Screen | What it does |
 | --- | --- |
-| Action list (Sales opportunities, My day) | One ranked list of what to do today: near-expiry lots, approved rates not yet ordered, distributors running low, customers who stopped ordering, overdue visits. Each can be answered Done, Later or Not interested with a reason |
-| Sales orders | Order with live credit check. Repeat last order, suggested order from the distributor's stock, quick entry of all products, overstock warning, print/PDF |
+| Action list (Sales opportunities, My day) | One ranked list of what to do today: near-expiry lots, approved rates not yet ordered, distributors running low, customers who stopped ordering, overdue visits, payments to collect (old dues or orders held for credit) and products that similar customers buy but this one does not. Each can be answered Done, Later or Not interested with a reason |
+| Sales orders | Order with live credit check. Repeat last order, suggested order from the distributor's stock, quick entry of all products, overstock warning, print/PDF, share on WhatsApp |
 | Booklets | Special-rate requests with approval by level (ASM, RSM, GM) depending on how far below the base rate |
 | Schemes | Bonus (10 + 1) and/or discount per product with minimum boxes and dates. Applies itself on the order; the screen nudges "add 2 more boxes to get 1 more free" |
 | Price lists | A rate per customer type, or a contract rate for one customer. Orders pick it up automatically |
@@ -25,7 +25,8 @@ Attendance, leave and expense claims are deliberately not part of this app.
 | --- | --- |
 | Stock and expiry | Batch-wise company stock by Excel upload. Expiry ladder, stock that will not sell in time at the current rate, offer slabs for near-expiry lots, "Find buyers" who can use a batch before it expires |
 | Near-expiry lot orders | Sold at the offer rate, limited to the batch, marked non-returnable; a later expiry claim on that batch is refused |
-| Earliest expiry first | Every order shows which batches to send; recorded at dispatch |
+| Earliest expiry first | Every order shows which batches to send. Dispatch records the batches that left, takes them out of the company stock, and makes later return claims traceable to the batch |
+| Running out | Products whose sellable stock covers fewer than 30 days of sale |
 | Short stock | When open orders exceed sellable stock: a fair share per order based on what each customer normally buys |
 | Loss and returns | Expired in the godown, expiry returns by month, by customer and product, and what near-expiry selling recovered |
 | Claims | Expiry, breakage and rate-difference claims, checked against the returns policy (window, value, traceability, yearly cap). Doubtful claims carry flags; over-cap claims go to the GM |
@@ -74,7 +75,7 @@ These defaults were chosen while building; set them to the company's own policy 
 
 ## Checks
 
-`npm run smoke` runs 143 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
+`npm run smoke` runs 149 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
 
 ## Run it on your own computer (for a developer)
 
@@ -197,7 +198,7 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 
 - Location sharing from the browser works only while the page is open and the screen is on, and a browser location can be faked. Background tracking and mock-location detection need the Android app, which is not built yet.
 - The app does not work offline.
-- Free stock of a batch is the uploaded quantity less near-expiry lot orders taken since; ordinary sales are reflected only at the next stock upload. Upload stock regularly.
+- Company stock goes down when an order is marked dispatched in this app. Anything that leaves the godown another way (direct invoices, samples, breakage) is corrected only by the next stock upload, so upload stock regularly.
 - Suggested orders, bought-vs-sold and transfer suggestions need distributor stock reports not older than 45 days.
 - "Forgot password" is handled by the Admin setting a new password on the employee form.
 - Dates on forms are entered in AD.

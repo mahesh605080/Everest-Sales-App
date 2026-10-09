@@ -129,13 +129,41 @@ export async function actions(s: Session) {
     text: `No order for ${c.days_since} days. Used to buy about Rs ${Math.round(Number(c.value_12m) / 12).toLocaleString('en-IN')} a month.`, href: `/orders?customer=${c.customer_id}&repeat=1`, cta: 'Repeat last order' });
   for (const c of seg.customers) if (c.overdue && c.cls !== 'C') out.push({ key: `visit:${c.id}`, kind: `Visit due · class ${c.cls}`, customer_id: c.id, customer: c.name, value: c.value / 12, weight: c.cls === 'A' ? 1 : 0.6,
     text: c.last_visit ? `Last visited ${c.days_since} days ago; class ${c.cls} should be seen every ${c.norm_days} days.` : `Never visited; class ${c.cls} should be seen every ${c.norm_days} days.`, href: `/customers/${c.id}`, cta: 'Open customer' });
+  // Money stuck: old dues, or an order held because the customer is over its limit. Collecting it frees the next order.
+  const pc: any[] = [];
+  const dues = await q<any>(
+    `select c.id, c.name, coalesce(ob.b2,0) + coalesce(ob.b3,0) as old, coalesce(ob.total,0) as total,
+            coalesce((select sum(o.value) from sales_orders o where o.customer_id=c.id and o.status='Pending' and o.over_limit),0) as held
+       from customers c left join outstanding_balances ob on ob.customer_id=c.id
+      where c.active and exists(select 1 from customer_assignments ca join users u on u.id=ca.user_id where ca.customer_id=c.id and ca.to_date is null${teamScope(s, pc)})
+        and (coalesce(ob.b2,0) + coalesce(ob.b3,0) > 0 or exists(select 1 from sales_orders o where o.customer_id=c.id and o.status='Pending' and o.over_limit))`, pc);
+  for (const d of dues) { const old = Number(d.old), held = Number(d.held);
+    out.push({ key: `col:${d.id}`, kind: 'Collect payment', customer_id: d.id, customer: d.name, value: Math.max(old, held), weight: held > 0 ? 2.2 : 1.3,
+      text: [old > 0 ? `Rs ${Math.round(old).toLocaleString('en-IN')} is more than 60 days old` : '', held > 0 ? `orders worth Rs ${Math.round(held).toLocaleString('en-IN')} are held for credit` : ''].filter(Boolean).join('; ') + '. Collecting frees the next order.', href: '/r/collections', cta: 'Record collection' }); }
+
+  // Products that at least half the buying customers of the same type take, but this one has not in 12 months.
+  const pw: any[] = [];
+  const gaps = await q<any>(
+    `with buys as (select o.customer_id, c.type, i.product_id, sum(i.qty)::numeric / 6 as per_month from sales_order_items i join sales_orders o on o.id=i.order_id join customers c on c.id=o.customer_id
+                    where o.status in ('Approved','Dispatched') and o.order_date > ${TODAY} - 180 group by o.customer_id, c.type, i.product_id),
+          active as (select c.type, count(distinct o.customer_id)::int n from sales_orders o join customers c on c.id=o.customer_id where o.status in ('Approved','Dispatched') and o.order_date > ${TODAY} - 180 group by c.type),
+          popular as (select b.type, b.product_id, count(*)::int buyers, avg(b.per_month) as usual from buys b group by b.type, b.product_id)
+     select c.id, c.name, p.id as product_id, p.name as product, p.units_per_box, p.trade_rate, pop.buyers, a.n, pop.usual
+       from customers c join active a on a.type=c.type and a.n >= 3 join popular pop on pop.type=c.type and pop.buyers * 2 >= a.n join products p on p.id=pop.product_id and p.active
+      where c.active and exists(select 1 from customer_assignments ca join users u on u.id=ca.user_id where ca.customer_id=c.id and ca.to_date is null${teamScope(s, pw)})
+        and exists(select 1 from sales_orders o where o.customer_id=c.id and o.status in ('Approved','Dispatched') and o.order_date > ${TODAY} - 180)
+        and not exists(select 1 from sales_order_items i join sales_orders o on o.id=i.order_id where o.customer_id=c.id and i.product_id=p.id and o.status in ('Pending','Approved','Dispatched') and o.order_date > ${TODAY} - 365)
+      limit 300`, pw);
+  for (const g of gaps) { const qty = Math.max(1, Math.round(Number(g.usual)));
+    out.push({ key: `ws:${g.id}:${g.product_id}`, kind: 'Not buying yet', customer_id: g.id, customer: g.name, value: qty * g.units_per_box * g.trade_rate, weight: 0.9,
+      text: `${g.product}: ${g.buyers} of ${g.n} similar customers buy it (about ${qty} boxes a month). This customer has not bought it in 12 months.`, href: `/orders?customer=${g.id}&product=${g.product_id}&qty=${qty}`, cta: 'Create order' }); }
   const hidden = new Set((await q<any>(`select distinct key from action_feedback where hide_until >= ${TODAY}`)).map(r => r.key));
   const list = out.filter(a => !hidden.has(a.key)).map(a => ({ ...a, cls: cls.get(a.customer_id) || 'C', value: Math.round(a.value), score: Math.round(a.value * a.weight) })).sort((a, b) => b.score - a.score);
   return { actions: list.slice(0, 60), total: list.length, value: list.reduce((a, x) => a + x.value, 0), reasons: REASONS };
 }
 
 export async function actionFeedback(s: Session, b: any) {
-  const key = String(b.key || ''), m = key.match(/^(lot|bk|ro|lap|visit):(\d+)(?::\d+)?$/), outcome = String(b.outcome || '');
+  const key = String(b.key || ''), m = key.match(/^(lot|bk|ro|lap|visit|col|ws):(\d+)(?::\d+)?$/), outcome = String(b.outcome || '');
   if (!m) throw new HttpError(422, 'Unknown action.');
   if (!['done', 'later', 'no'].includes(outcome)) throw new HttpError(422, 'Choose what happened.');
   const reason = outcome === 'no' ? String(b.reason || '').trim().slice(0, 200) : null;

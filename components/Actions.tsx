@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { call, rs, toast } from '@/lib/ui';
 
-const TONE: Record<string, string> = { 'Near-expiry lot': 'warn', 'Approved rate': 'good', 'Running low': 'crit', 'Stopped ordering': 'serious' };
+const TONE: Record<string, string> = { 'Near-expiry lot': 'warn', 'Approved rate': 'good', 'Running low': 'crit', 'Stopped ordering': 'serious', 'Collect payment': 'crit', 'Not buying yet': 'info' };
 const CLS: Record<string, string> = { A: 'good', B: 'info', C: '' };
 
 /** One ranked list of what to do today. Each row can be answered, so the list learns what was tried. */
@@ -25,7 +25,7 @@ export default function Actions({ canOrder, compact = false }: { canOrder: boole
       <div className="t" style={{ minWidth: 200 }}><span className="code">{i + 1}.</span> <a href={`/customers/${a.customer_id}`}><b>{a.customer}</b></a> <span className={`pill ${CLS[a.cls]}`}>{a.cls}</span> <span className={`pill ${TONE[a.kind] || 'info'}`}>{a.kind}</span> <b className="num">{rs(a.value)}</b><br /><span className="sub">{a.text}</span>
         {ask === a.key && <div className="toolbar" style={{ marginTop: 8 }}><div className="l" style={{ flex: 1 }}><select aria-label="Reason" value={why} onChange={e => setWhy(e.target.value)}><option value="">Why not?</option>{d.reasons.map((r: string) => <option key={r}>{r}</option>)}</select>
           <button className="btn sm primary" disabled={!why} onClick={() => answer(a.key, 'no', why)}>Save</button><button className="btn sm" onClick={() => { setAsk(null); setWhy(''); }}>Cancel</button></div></div>}</div>
-      <div className="toolbar" style={{ gap: 6 }}>{(canOrder || a.cta === 'Open customer') && <a className="btn sm primary" href={a.href}>{a.cta}</a>}
+      <div className="toolbar" style={{ gap: 6 }}>{(canOrder || a.cta !== 'Create order') && <a className="btn sm primary" href={a.href}>{a.cta}</a>}
         {canOrder && <><button className="btn sm" title="Done or already handled" onClick={() => answer(a.key, 'done')}>Done</button><button className="btn sm" title="Ask again in 3 days" onClick={() => answer(a.key, 'later')}>Later</button><button className="btn sm" onClick={() => { setAsk(a.key); setWhy(''); }}>Not interested</button></>}</div>
     </div>)}</div>
     {!compact && d.actions.length > 15 && <div><button className="btn sm" onClick={() => setMore(!more)}>{more ? 'Show top 15' : `Show all ${d.actions.length}`}</button></div>}
