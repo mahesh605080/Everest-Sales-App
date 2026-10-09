@@ -221,6 +221,19 @@ async function main() {
     ok('scheme results are not open to a sales officer', (await so.get('/api/pricing?results=1')).status === 403);
   }
 
+  // suggested order, bought against sold, and moving stock between distributors
+  { const sg = (await so.get(`/api/sales/suggest?customer=${c1.id}`)).data;
+    ok('suggested order fills up to the target days less stock and orders on the way', sg.basis === 'stock' && sg.items.length === 1 && sg.items[0].product_id === ns.id && sg.items[0].qty === 450 - 40 - sg.stock[ns.id].coming, sg);
+    ok('suggested order respects territory', (await so.get(`/api/sales/suggest?customer=${other.id}`)).status === 403);
+    await so2.post('/api/stock', { customer_id: other.id, items: [{ product_id: ns.id, stock: 2000, sold_30d: 100, near_expiry: 0 }] });
+    ok('an overstocked distributor gets no suggestion', (await so2.get(`/api/sales/suggest?customer=${other.id}`)).data.items.length === 0);
+    const h = (await gm.get('/api/stock?view=health')).data.rows, hr = (c: any) => h.find((r: any) => r.customer_id === c.id && r.product_id === ns.id);
+    ok('bought-vs-sold marks overstock and low stock', hr(other)?.status === 'Overstocked' && hr(other).excess === 1700 && hr(c1)?.status === 'Running low', [hr(other), hr(c1)]);
+    const tr = (await gm.get('/api/stock?view=transfers')).data.rows;
+    ok('a transfer is suggested from the overstocked distributor to the one running short', tr.some((t: any) => t.from_id === other.id && t.to_id === c1.id && t.product_id === ns.id && t.boxes === sg.items[0].qty), tr);
+    ok('channel views are not open to a sales officer', (await so.get('/api/stock?view=transfers')).status === 403);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

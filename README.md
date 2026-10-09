@@ -142,6 +142,13 @@ The system's first job is to get more orders in with less effort. These screens 
 - **Loss and returns tab** (Stock and expiry) — stock expired in the godown, expiry returns by month, customers and products returning the most, and how much near-expiry selling recovered.
 - Settings: `return_before_expiry_months`, `return_after_expiry_months`, `return_cap_pct`, `breakage_claim_days`.
 
+## Right stock at the distributor
+
+- **Suggested order** (order screen) — from the distributor's last stock report: fills each product up to `target_cover_days` of sale, less stock held and orders already on the way. Without a stock report it falls back to the usual monthly quantity.
+- **Overstock warning** — if an order would leave the customer with more than `max_cover_months` of sale, the order screen says so before it is sent.
+- **Bought vs sold** (Distributor stock) — monthly purchases against monthly market sale per distributor and product: piling up, overstocked, running low, not selling, with the value of extra stock.
+- **Move stock** — pairs a distributor who cannot sell a product in time with one running short of it (same area first), so stock moves instead of expiring.
+
 ## Experience upgrades
 
 | Area | What works now |

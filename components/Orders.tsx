@@ -56,10 +56,21 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
       setBk(''); setLines(r.items.map((i: any) => ({ product_id: String(i.product_id), qty: String(i.qty) }))); setNote(`Filled from ${r.order.no} of ${r.order.order_date}. Change the quantities if needed. Rates are today's standard rates.`);
     } catch (e: any) { setErr(e.message); }
   }
+  const [sug, setSug] = useState<any>(null);
+  async function suggest(c: string) {
+    try { const r = await call(`/api/sales/suggest?customer=${c}`); setSug(r);
+      if (!r.items.length) { setNote(r.basis === 'stock' ? `Stock report of ${r.day} shows enough stock of every product for ${r.target_days} days.` : 'No stock report or order history to suggest from. Report this customer\'s stock first.'); return; }
+      setBk(''); setLines(r.items.map((i: any) => ({ product_id: String(i.product_id), qty: String(i.qty) })));
+      setNote(r.basis === 'stock' ? `Suggested from the stock report of ${r.day}: fills each product up to ${r.target_days} days of sale.` : 'Suggested from the usual monthly quantity of products not ordered for 30 days.');
+    } catch (e: any) { setErr(e.message); }
+  }
+  // Too much stock at the distributor comes back as an expiry return: warn before the order is sent.
+  const cover = (l: Line) => { const k = sug?.stock?.[l.product_id]; if (!k || !(k.sold_30d > 0) || l.lot) return null; const m = (k.stock + k.coming + (Number(l.qty) || 0)) / k.sold_30d; return m > sug.max_cover_months ? m : null; };
   // Opened from a customer page, a visit, a booklet or an opportunity: start with that customer already chosen.
   useEffect(() => { if (init?.customer && custs.length && !cust) setCust(init.customer); }, [init, custs]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    setCredit(null); setBks([]); setBk(''); setBkItems([]); setNote(''); setPricing({ rates: {}, schemes: [] }); setLines([{ product_id: '', qty: '10' }]); if (!cust) return;
+    setCredit(null); setBks([]); setBk(''); setBkItems([]); setNote(''); setPricing({ rates: {}, schemes: [] }); setSug(null); setLines([{ product_id: '', qty: '10' }]); if (!cust) return;
+    call(`/api/sales/suggest?customer=${cust}`).then(setSug).catch(() => {});
     call(`/api/pricing?customer=${cust}`).then(setPricing).catch(() => {});
     call(`/api/credit?customer=${cust}`).then(r => setCredit(r.credit)).catch(() => {});
     call(`/api/booklets?box=usable&customer=${cust}`).then(r => { setBks(r.booklets); if (init?.customer === cust && init.booklet && r.booklets.some((b: any) => String(b.id) === init.booklet)) setBk(init.booklet); }).catch(() => {});
@@ -98,7 +109,7 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
         <div className="fld"><label htmlFor="od-trn">Transporter name</label><input id="od-trn" type="text" value={f.transporter} onChange={e => setF({ ...f, transporter: e.target.value })} /></div>
         <div className="fld"><label htmlFor="od-veh">Vehicle number</label><input id="od-veh" type="text" value={f.vehicle_no} onChange={e => setF({ ...f, vehicle_no: e.target.value })} /></div></div>
       {credit && <CreditBox c={credit} />}
-      {cust && !bk && <div className="toolbar"><div className="l"><button type="button" className="btn" onClick={() => repeat(cust)}>Repeat last order</button>{note && <span className="sub">{note}</span>}</div></div>}
+      {cust && !bk && <div className="toolbar"><div className="l"><button type="button" className="btn" onClick={() => repeat(cust)}>Repeat last order</button><button type="button" className="btn" onClick={() => suggest(cust)}>Suggested order</button>{note && <span className="sub">{note}</span>}</div></div>}
       {lines.map((l, i) => { const p = bk ? bkItems.find(x => String(x.product_id) === l.product_id) : P.get(l.product_id); return <div key={i} style={{ background: 'var(--canvas)', borderRadius: 10, padding: 12, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', alignItems: 'end' }}>
         {l.lot ? <div style={{ gridColumn: 'span 2' }}><div className="lab">Near-expiry lot · non-returnable</div><b>{l.lot.product}</b><br /><span className="code">batch {l.lot.batch_no} · expires {l.lot.expiry_date} · {l.lot.offer.text} · {l.lot.free_boxes} boxes free</span></div>
           : bk ? <div style={{ gridColumn: 'span 2' }}><div className="lab">Product (from booklet)</div><b>{p?.product}</b></div>
@@ -106,6 +117,7 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
         <div className="fld"><label htmlFor={`ol${i}-q`}>Boxes{bk && p ? ` (balance ${p.balance})` : ''}</label><input id={`ol${i}-q`} type="number" min={0} value={l.qty} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
         <div><div className="lab">Rate</div><div className="num">{rate(l.product_id, l.lot, l) ? Number(rate(l.product_id, l.lot, l)).toFixed(2) : '–'}</div>{!bk && !l.lot && pricing.rates[l.product_id] && <span className="sub">{pricing.rates[l.product_id].source === 'customer' ? 'Contract rate' : 'Price list'} · trade {P.get(l.product_id)?.trade_rate}</span>}</div>
         <div><div className="lab">Value</div><div className="num">{rs((Number(l.qty) || 0) * upb(l.product_id) * rate(l.product_id, l.lot, l))}</div></div>
+        {cover(l) && <div style={{ gridColumn: '1 / -1' }}><span className="pill warn">With this order the customer holds {cover(l)!.toFixed(1)} months of sale (limit {sug.max_cover_months}). Extra stock can come back as an expiry return.</span></div>}
         {(() => { const sc = scheme(l); return (sc.got || sc.next) ? <div style={{ gridColumn: '1 / -1' }}>{sc.got && <span className="pill good">Scheme {sc.got.s.code}: {sc.got.s.text}{sc.got.free ? ` · ${sc.got.free} free boxes` : ''}</span>} {sc.next && <span className="pill info">Add {sc.next.more} more {sc.next.more === 1 ? 'box' : 'boxes'} to get {sc.next.text}</span>}</div> : null; })()}
         {!bk && lines.length > 1 && <div><button type="button" className="btn sm" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>Remove</button></div>}</div>; })}
       <div className="toolbar"><div className="l">{!bk && <button type="button" className="btn" onClick={() => setLines(ls => [...ls, { product_id: '', qty: '10' }])}>Add product</button>}</div>
