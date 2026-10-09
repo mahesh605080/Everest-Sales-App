@@ -9,11 +9,11 @@ import { ALL_PERMS } from '../lib/perm';
 const views = ALL_PERMS.filter(p => p.endsWith('.view'));
 const ROLES: [string, string, number, string[]][] = [
   ['admin', 'Admin', 5, ALL_PERMS],
-  ['gm', 'General Manager', 4, [...views, 'export.run']],
+  ['gm', 'General Manager', 4, [...views, 'export.run', 'alerts.view']],
   ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run']],
-  ['rsm', 'Regional Sales Manager', 3, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'regions.view', 'map.view', 'track.view', 'track.send', 'export.run']],
-  ['asm', 'Area Sales Manager', 2, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'map.view', 'track.view', 'track.send', 'export.run']],
-  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send']],
+  ['rsm', 'Regional Sales Manager', 3, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'regions.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view']],
+  ['asm', 'Area Sales Manager', 2, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view']],
+  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use']],
 ];
 const SETTINGS: [string, string, string, string][] = [
   ['geo_fence_radius_m', '200', 'Geo-fence radius for a valid customer visit', 'metres'],

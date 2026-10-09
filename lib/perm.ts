@@ -4,6 +4,7 @@ export const PERM_GROUPS: { group: string; perms: { key: string; label: string }
   ...Object.values(ENT).map(e => ({ group: e.label, perms: [{ key: `${e.key}.view`, label: 'View' }, { key: `${e.key}.edit`, label: 'Add and edit' }] })),
   { group: 'Data transfer', perms: [{ key: 'import.run', label: 'Import from Excel' }, { key: 'export.run', label: 'Export to Excel' }] },
   { group: 'Map and location', perms: [{ key: 'map.view', label: 'View customer map' }, { key: 'track.view', label: 'See team location' }, { key: 'track.send', label: 'Share own location' }] },
+  { group: 'Field work', perms: [{ key: 'field.use', label: 'Attendance and visits (own)' }, { key: 'team.view', label: 'Team attendance and visits' }, { key: 'alerts.view', label: 'See and acknowledge alerts' }, { key: 'alerts.manage', label: 'Change alert rules' }] },
   { group: 'Administration', perms: [{ key: 'roles.manage', label: 'Roles and permissions' }, { key: 'settings.manage', label: 'Settings' }, { key: 'audit.view', label: 'Audit log' }] },
 ];
 export const ALL_PERMS = PERM_GROUPS.flatMap(g => g.perms.map(p => p.key));

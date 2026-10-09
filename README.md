@@ -1,4 +1,4 @@
-# Everest SFA — Phase 1
+# Everest SFA — Phase 1 and Phase 2 (web part)
 
 Sales force monitoring and control system for Everest Parenterals Pvt. Ltd.
 This is Phase 1: the foundation that every later phase builds on.
@@ -18,7 +18,22 @@ This is Phase 1: the foundation that every later phase builds on.
 | Audit log | Every login, lock-out and data change with who, when, old value, new value and IP address |
 | Settings | Geo-fence radius, approval bands, reminder hours and other limits used by later phases |
 
-Not in Phase 1: attendance, visits, booklets, sales orders, credit control, collections, expenses, targets, reports, the Android app. They are listed in the left menu under "Coming next".
+## What Phase 2 adds so far
+
+| Area | What works now |
+| --- | --- |
+| My day | A field user starts the day with a sales projection, checks in and out at assigned customers, and ends the day with actual sales. Time and GPS are saved at each step |
+| Geo-fence | A visit started farther from the customer than the radius in Settings is saved and flagged. A customer without a location gets it from the first visit |
+| Visit rules | One open visit at a time, purpose and remarks (10+ characters) needed to close it, only assigned customers |
+| Team today | Managers see who is on duty, late, on a visit, idle, visits and flagged visits, for today or any past date, limited to their area or region |
+| Visit report | Every visit in a date range with duration, distance flag, purpose and remarks |
+| Alerts | No check-in by a set time, no visit for a set time, visit outside the geo-fence, day left open (closed at midnight), customers not visited for a set number of days. Managers acknowledge alerts; Admin switches rules on/off and sets limits |
+
+Alert rules are checked whenever someone has Team today or Alerts open (at most once a minute). For checks with nobody looking, have the server call `GET /api/alerts` on a schedule, or wait for the notification service planned with the Android app.
+
+Still to come in Phase 2: monthly tour plan with approval, selfie at check-in, notices, and the Android app with background tracking.
+
+Not built yet: booklets, sales orders, credit control, collections, expenses, targets, reports. They are listed in the left menu under "Coming next".
 
 ## Run it on your own computer (for a developer)
 
@@ -106,6 +121,11 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 | `GET /api/map/customers` | Customers with a location |
 | `POST /api/track/ping`, `GET /api/track/latest` | Send own position; read the team's last positions |
 | `GET/PUT /api/roles`, `GET/PUT /api/settings` | Administration |
+| `GET /api/field/today?lat=&lng=` | The caller's attendance, open visit, today's visits and assigned customers with distance |
+| `POST /api/field/checkin`, `POST /api/field/checkout` | Start and end the day (`lat`, `lng`, `accuracy`, `projection` / `actual`) |
+| `POST /api/field/visit/start`, `POST /api/field/visit/end` | Customer visit |
+| `GET /api/team/today?day=`, `GET /api/visits?from=&to=` | Manager views |
+| `GET /api/alerts?open=1`, `POST /api/alerts/ack`, `GET/PUT /api/alerts/rules` | Alerts |
 
 ## How the code is organised
 

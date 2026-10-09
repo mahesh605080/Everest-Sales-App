@@ -215,3 +215,4 @@ input[type=password],input[type=date],input[type=email],input[type=file]{font:in
 body{margin:0}
 td .code,td.code{white-space:nowrap}
 @media (max-width:900px){nav a.nv{white-space:nowrap}nav a.nv:hover{transform:none}nav a.nv[aria-current=page]::before{display:none}nav .soon{display:none}.tbl table{min-width:560px}}
+td.num,td .num,.kv b{white-space:nowrap}td .pill{margin-left:4px}
