@@ -7,14 +7,14 @@ import { pool, q, q1 } from '../lib/db';
 import { ALL_PERMS } from '../lib/perm';
 
 const views = ALL_PERMS.filter(p => p.endsWith('.view'));
-const mgr = ['inventory.view', 'tenders.edit', 'reports.run', 'scorecard.view', 'samples.view', 'competitor.view'];
+const mgr = ['inventory.view', 'schemes.view', 'rates.view', 'tenders.edit', 'reports.run', 'scorecard.view', 'samples.view', 'competitor.view'];
 const ROLES: [string, string, number, string[]][] = [
   ['admin', 'Admin', 5, ALL_PERMS],
-  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage', 'booklets.approve', ...mgr, 'claims.approve', 'targets.manage', 'inventory.manage']],
-  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run', 'sales.view', 'credit.manage', 'dispatch.manage', 'alerts.view', 'collections.verify', 'claims.settle', 'stock.view', 'tenders.view', 'reports.run', 'inventory.view', 'inventory.manage']],
+  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage', 'booklets.approve', ...mgr, 'claims.approve', 'targets.manage', 'inventory.manage', 'schemes.edit', 'rates.edit']],
+  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run', 'sales.view', 'credit.manage', 'dispatch.manage', 'alerts.view', 'collections.verify', 'claims.settle', 'stock.view', 'tenders.view', 'reports.run', 'inventory.view', 'inventory.manage', 'schemes.view', 'rates.view']],
   ['rsm', 'Regional Sales Manager', 3, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'regions.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.approve', 'booklets.approve', 'sales.view', ...mgr, 'claims.approve', 'stock.view', 'tenders.view']],
   ['asm', 'Area Sales Manager', 2, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.use', 'plan.approve', 'booklets.create', 'booklets.approve', 'orders.create', 'sales.view', ...mgr, 'collections.create', 'claims.create', 'stock.report', 'stock.view', 'tenders.view', 'samples.create', 'competitor.create']],
-  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use', 'plan.use', 'booklets.create', 'orders.create', 'collections.create', 'claims.create', 'stock.report', 'tenders.view', 'samples.create', 'competitor.create', 'inventory.view']],
+  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use', 'plan.use', 'booklets.create', 'orders.create', 'collections.create', 'claims.create', 'stock.report', 'tenders.view', 'samples.create', 'competitor.create', 'inventory.view', 'schemes.view', 'rates.view']],
 ];
 const SETTINGS: [string, string, string, string][] = [
   ['geo_fence_radius_m', '200', 'Geo-fence radius for a valid customer visit', 'metres'],
@@ -107,6 +107,9 @@ async function main() {
         [c[0], c[1], c[2], c[3], c[4], c[5], a.id, await term(c[8]), c[9], c[10]]);
       if (row && c[7]) await q('insert into customer_assignments(customer_id,user_id) values($1,$2)', [row.id, await uid(c[7])]);
     }
+    await q(`insert into schemes(code,name,product_id,min_qty,bonus_buy,bonus_free,discount_pct,valid_from,valid_to)
+             select 'RL-10P1','Sample RL 10 + 1',id,20,10,1,0,current_date - 5,current_date + 40 from products where code='RL500' on conflict(code) do nothing`);
+    await q(`insert into price_rules(code,name,product_id,customer_type,rate) select 'HOSP-PCM','Sample hospital price list',id,'Hospital',80 from products where code='PCM100' on conflict(code) do nothing`);
     console.log(`sample data loaded. Every sample user (GM01, CC01, RSM01, ASM01, SO01 ...) uses password "${pw}".`);
   }
   await pool.end();

@@ -17,7 +17,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const overview = [{ href: '/dashboard', label: 'Dashboard' }];
   if (can(s, 'map.view')) overview.push({ href: '/map', label: can(s, 'track.view') ? 'Live map' : 'Customer map' });
   if (can(s, 'track.send')) overview.push({ href: '/location', label: 'Share my location' });
-  const masters = Object.values(ENT).filter(e => e.key !== 'tenders' && can(s, `${e.key}.view`)).map(e => ({ href: `/m/${e.key}`, label: e.label }));
+  const masters = Object.values(ENT).filter(e => !['tenders', 'schemes', 'rates'].includes(e.key) && can(s, `${e.key}.view`)).map(e => ({ href: `/m/${e.key}`, label: e.label }));
   const admin = [] as { href: string; label: string }[];
   if (can(s, 'roles.manage')) admin.push({ href: '/roles', label: 'Roles and permissions' });
   if (can(s, 'settings.manage')) admin.push({ href: '/settings', label: 'Settings' });
@@ -34,11 +34,14 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/orders', label: 'Sales orders' });
   if (can(s, 'credit.manage') || can(s, 'dispatch.manage')) sales.push({ href: '/credit', label: 'Credit control' });
   if (can(s, 'inventory.view')) sales.push({ href: '/expiry', label: 'Stock and expiry' });
+  if (can(s, 'schemes.view')) sales.push({ href: '/m/schemes', label: 'Schemes' });
+  if (can(s, 'rates.view')) sales.push({ href: '/m/rates', label: 'Price lists' });
   if (can(s, 'tenders.view')) sales.push({ href: '/m/tenders', label: 'Tenders' });
   const money = Object.values(REQ).filter(d => can(s, d.create) || d.steps.some(st => can(s, st.perm)) || (!!d.view && can(s, d.view))).map(d => ({ href: `/r/${d.key}`, label: d.label }));
   if (can(s, 'stock.report') || can(s, 'stock.view')) money.push({ href: '/stock', label: 'Distributor stock' });
   const perf = [] as { href: string; label: string }[];
   if (can(s, 'scorecard.view') || can(s, 'targets.manage')) perf.push({ href: '/scorecard', label: 'Targets and scorecard' });
+  if (can(s, 'scorecard.view')) perf.push({ href: '/scheme-results', label: 'Scheme results' });
   if (can(s, 'reports.run')) perf.push({ href: '/reports', label: 'Reports' });
   const nav = [{ group: 'Overview', items: overview }, { group: 'Field', items: field }, { group: 'Sales', items: sales }, { group: 'Money and requests', items: money }, { group: 'Performance', items: perf }, { group: 'Masters', items: masters }, { group: 'Administration', items: admin }].filter(g => g.items.length);
   const titles: Record<string, [string, string]> = {
@@ -59,6 +62,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/customers': ['Customer', 'Everything about one customer in one place'],
     '/opportunities': ['Sales opportunities', 'Approved rates not yet ordered, customers who stopped ordering, distributors running low'],
     '/expiry': ['Stock and expiry', 'Which batches will not sell before they expire, who can use them in time, and at what offer'],
+    '/scheme-results': ['Scheme results', 'What each scheme sold, what it cost, and whether sales really went up'],
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],

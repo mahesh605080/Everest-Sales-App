@@ -120,6 +120,20 @@ export async function saveRow(ent: Entity, s: Session, id: number | null, body: 
 
   const before = id ? await q1(`select * from ${ent.table} where id=$1`, [id]) : null;
   if (id && !before) throw new HttpError(404, `This ${ent.one} no longer exists.`);
+  if (ent.key === 'schemes' || ent.key === 'rates') {
+    const m: any = { ...(before || {}), ...vals }, bad = (msg: string) => { throw new HttpError(422, msg); };
+    if (m.valid_from && m.valid_to && String(m.valid_to).slice(0, 10) < String(m.valid_from).slice(0, 10)) bad('"To" cannot be before "From".');
+    if (ent.key === 'schemes') {
+      if (!(m.min_qty >= 1)) bad('Minimum boxes must be 1 or more.');
+      if ((m.bonus_free > 0) !== (m.bonus_buy > 0)) bad('A bonus needs both numbers, for example for every 10 boxes, 1 free.');
+      if (m.discount_pct < 0 || m.discount_pct > 50) bad('Discount must be between 0 and 50%.');
+      if (!(m.bonus_free > 0) && !(m.discount_pct > 0)) bad('Give the scheme a bonus or a discount.');
+      if (m.bonus_free > m.bonus_buy) bad('Free boxes cannot be more than the boxes bought.');
+    } else {
+      if (!(m.rate > 0)) bad('Rate must be more than zero.');
+      if (!!m.customer_type === !!m.customer_id) bad('Choose either a customer type or one customer.');
+    }
+  }
   const keys = Object.keys(vals);
   if (id) {
     // Nothing actually different (common when re-importing the same file): do not write or log.

@@ -180,7 +180,7 @@ export async function fefoForOrder(items: any[]) {
   const all = await batches(), minShelf = await setting('min_shelf_life_months', 2);
   for (const i of items) {
     if (i.batch_no) { i.fefo = null; continue; }
-    const f = await fefoPlan(i.product_id, i.qty, minShelf, all);
+    const f = await fefoPlan(i.product_id, i.qty + (i.free_qty || 0), minShelf, all);
     i.fefo = f.plan.length ? f : null;
   }
   return items;

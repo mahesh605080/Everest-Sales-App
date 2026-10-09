@@ -179,6 +179,32 @@ async function main() {
     ok('offer slabs are validated', (await gm.put('/api/expiry/offers', { slabs: [{ months_from: 0, months_to: 4, discount_pct: 30 }, { months_from: 3, months_to: 6, discount_pct: 15 }] })).status === 422 && (await so.put('/api/expiry/offers', { slabs: [] })).status === 403);
   }
 
+  // schemes and price lists
+  { const day = (n: number) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    const wfi = prods.find((p: any) => p.code === 'WFI10'), cip = prods.find((p: any) => p.code === 'CIPED');
+    const sch = { code: 'T-WFI', name: 'Test WFI scheme', product_id: wfi.id, min_qty: 20, bonus_buy: 10, bonus_free: 1, discount_pct: 5, valid_from: day(-1), valid_to: day(30) };
+    ok('a sales officer cannot create a scheme', (await so.post('/api/m/schemes', sch)).status === 403);
+    ok('a bonus needs both numbers', (await gm.post('/api/m/schemes', { ...sch, bonus_buy: 0 })).status === 422);
+    ok('GM creates a scheme', (await gm.post('/api/m/schemes', sch)).status === 200);
+    const pr = (await so.get(`/api/pricing?customer=${c1.id}`)).data;
+    ok('the order screen is told about the running scheme', pr.schemes.some((x: any) => x.code === 'T-WFI' && x.text === '10+1 and 5% off'), pr.schemes);
+    const line = async (p: any, qty: number) => { const o = (await so.post('/api/orders', { customer_id: c1.id, items: [{ product_id: p.id, qty }] })).data; return { o, i: (await so.get(`/api/orders/${o.id}`)).data.items[0] }; };
+    const a = await line(wfi, 25);
+    ok('the scheme applies itself: discount on the rate and free boxes', a.i.free_qty === 2 && Math.abs(a.i.rate - wfi.trade_rate * 0.95) < 0.001 && Math.abs(a.o.value - 25 * wfi.units_per_box * wfi.trade_rate * 0.95) < 1 && a.i.scheme_text.startsWith('T-WFI'), a);
+    const b = await line(wfi, 10);
+    ok('below the minimum boxes there is no scheme', b.i.free_qty === 0 && b.i.rate === wfi.trade_rate && !b.i.scheme_text, b.i);
+    ok('a price rule needs a customer type or one customer, not both or neither', (await gm.post('/api/m/rates', { code: 'T-R0', name: 'x', product_id: cip.id, rate: 40 })).status === 422);
+    ok('GM creates a price list rate for distributors', (await gm.post('/api/m/rates', { code: 'T-R1', name: 'Distributor list', product_id: cip.id, customer_type: 'Distributor', rate: 40 })).status === 200);
+    const c = await line(cip, 2);
+    ok('an order picks up the price-list rate', c.i.rate === 40 && c.i.price_source === 'type' && c.i.list_rate === 40, c.i);
+    ok('GM creates a contract rate for one customer', (await gm.post('/api/m/rates', { code: 'T-R2', name: 'Contract', product_id: wfi.id, customer_id: c1.id, rate: 8 })).status === 200);
+    const d = await line(wfi, 25);
+    ok('a contract rate wins and takes no scheme on top', d.i.rate === 8 && d.i.free_qty === 0 && d.i.price_source === 'customer', d.i);
+    const res = (await gm.get('/api/pricing?results=1')).data.schemes.find((x: any) => x.code === 'T-WFI');
+    ok('scheme results show what it sold and what it cost', res?.orders === 1 && res.boxes === 25 && res.free_boxes === 2 && Math.abs(res.cost - (25 * wfi.units_per_box * wfi.trade_rate * 0.05 + 2 * wfi.units_per_box * wfi.trade_rate)) < 1, res);
+    ok('scheme results are not open to a sales officer', (await so.get('/api/pricing?results=1')).status === 403);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

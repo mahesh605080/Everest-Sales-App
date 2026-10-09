@@ -128,6 +128,13 @@ The system's first job is to get more orders in with less effort. These screens 
 - **Earliest expiry first (FEFO)** — every pending order shows which batches to send; the plan is recorded at dispatch.
 - Settings: `near_expiry_months`, `min_shelf_life_months`, `max_cover_months`.
 
+## Schemes and price lists
+
+- **Schemes** (Sales → Schemes) — per product, optional customer type, minimum boxes, bonus (10 + 1) and/or discount %, between two dates. On a standard-rate order line the best running scheme applies itself: the discount lowers the rate, free boxes are recorded on the line and added to the dispatch plan. Schemes never stack, and do not apply on booklet orders, near-expiry lots or contract rates.
+- **Order screen nudge** — "Add 2 more boxes to get 1 more free", so the officer can upsell on the spot.
+- **Price lists** (Sales → Price lists) — a rate per product for a customer type (hospital list, institution list) or for one customer (rate contract). Order: own contract rate, then type list, then trade rate. Orders pick it up automatically and record where the rate came from.
+- **Scheme results** (Performance) — orders, boxes, free boxes, billed value, what was given away (discount plus free goods at trade rate) and the change in sale against the same number of days before the scheme.
+
 ## Experience upgrades
 
 | Area | What works now |

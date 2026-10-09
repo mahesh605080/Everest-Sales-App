@@ -88,6 +88,33 @@ ENT.tenders = {
   ],
 };
 
+const CUST_TYPES = ['Distributor', 'Hospital', 'Institution', 'Retailer'];
+ENT.schemes = {
+  key: 'schemes', table: 'schemes', label: 'Schemes', one: 'scheme', search: ['code', 'name'],
+  note: 'A scheme applies itself on a standard-rate order line once the boxes reach the minimum, between the two dates. Bonus 10 + 1 gives one free box for every ten ordered. It does not apply on booklet orders, near-expiry lots, or products the customer buys at its own contract rate.',
+  fields: [
+    { key: 'code', label: 'Scheme code', type: 'text', required: true, upper: true, list: true }, { key: 'name', label: 'Name', type: 'text', required: true, list: true },
+    { key: 'product_id', label: 'Product', type: 'rel', rel: 'products', required: true, list: true },
+    { key: 'customer_type', label: 'Only for customer type', type: 'select', options: CUST_TYPES, list: true, help: 'Leave empty for every customer' },
+    { key: 'min_qty', label: 'Minimum boxes on the order', type: 'int', def: 1, required: true, list: true },
+    { key: 'bonus_buy', label: 'Bonus: for every (boxes)', type: 'int', def: 0, list: true }, { key: 'bonus_free', label: 'Bonus: free boxes', type: 'int', def: 0, list: true },
+    { key: 'discount_pct', label: 'Discount %', type: 'float', def: 0, list: true },
+    { key: 'valid_from', label: 'From', type: 'date', required: true, list: true }, { key: 'valid_to', label: 'To', type: 'date', required: true, list: true },
+  ],
+};
+ENT.rates = {
+  key: 'rates', table: 'price_rules', label: 'Price lists', one: 'rate', search: ['code', 'name'],
+  note: 'A rate for one customer (for example a hospital rate contract) wins over a rate for a customer type, which wins over the trade rate in the product master. Orders pick the rate up by themselves.',
+  fields: [
+    { key: 'code', label: 'Code', type: 'text', required: true, upper: true, list: true }, { key: 'name', label: 'Name', type: 'text', required: true, list: true, help: 'For example: Hospital price list 2083/84' },
+    { key: 'product_id', label: 'Product', type: 'rel', rel: 'products', required: true, list: true },
+    { key: 'customer_type', label: 'Customer type', type: 'select', options: CUST_TYPES, list: true, help: 'Fill this or the customer, not both' },
+    { key: 'customer_id', label: 'One customer (rate contract)', type: 'rel', rel: 'customers', list: true },
+    { key: 'rate', label: 'Rate per unit (Rs)', type: 'float', required: true, list: true },
+    { key: 'valid_from', label: 'From', type: 'date', list: true }, { key: 'valid_to', label: 'To', type: 'date', list: true, help: 'Leave empty for no end date' },
+  ],
+};
+
 export function relInfo(rel: string) {
   if (rel === 'roles') return { table: 'roles', label: 'name', code: 'key' };
   if (rel === 'employees') return { table: 'users', label: 'name', code: 'code' };

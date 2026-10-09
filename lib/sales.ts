@@ -10,6 +10,7 @@ import { fyLabel } from './bs';
 import { notify, roleInTerritory, withPerm } from './notify';
 import { filterSql, ListFilter } from './filters';
 import { batchOffer, fefoForOrder } from './inventory';
+import { bestScheme, pricesFor, schemesFor } from './pricing';
 
 export { fyLabel };
 
@@ -273,13 +274,14 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
     bkItems = await bookletItems(bk.id);
   }
   const items: any[] = [], seen = new Set<number>(); let value = 0;
+  const prices = bk ? new Map<number, any>() : await pricesFor(cust), schemes = bk ? [] : await schemesFor(cust);
   for (const [n, l] of lines.entries()) {
     const at = `Line ${n + 1}: `, p = await q1<any>('select * from products where id=$1 and active', [Number(l.product_id)]), qty = Number(l.qty);
     if (!p) throw new HttpError(422, at + 'choose a product.');
     const lot = l.batch_id ? Number(l.batch_id) : 0;
     if (seen.has(p.id * 100000 + lot)) throw new HttpError(422, at + `${p.name} is on the order twice.`); seen.add(p.id * 100000 + lot);
     if (!Number.isInteger(qty)) throw new HttpError(422, at + 'boxes must be a whole number.');
-    let rate = p.trade_rate, batch: any = null;
+    let rate = p.trade_rate, batch: any = null, listRate = p.trade_rate, source = 'trade', sch: any = null, free = 0;
     if (lot) {
       // A near-expiry lot: the price comes from the offer slab, no booklet is needed, and it is sold as non-returnable.
       if (bk) throw new HttpError(422, at + 'a near-expiry lot cannot be put on a booklet order. Use a separate order.');
@@ -287,16 +289,22 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
       if (batch.product_id !== p.id) throw new HttpError(422, at + 'that batch is a different product.');
       if (!batch.offer) throw new HttpError(422, at + (batch.expired ? `batch ${batch.batch_no} has expired and cannot be sold.` : batch.unsellable ? `batch ${batch.batch_no} has less shelf life left than the minimum in Settings.` : `batch ${batch.batch_no} is not near expiry, so it has no offer price.`));
       if (qty > batch.free_boxes) throw new HttpError(422, at + `only ${batch.free_boxes} boxes of batch ${batch.batch_no} are left.`);
-      rate = batch.offer.rate;
+      rate = batch.offer.rate; source = 'lot';
     }
     if (bk) {
       const bi = bkItems.find(x => x.product_id === p.id);
       if (!bi) throw new HttpError(422, at + `${p.name} is not on booklet ${bk.no}. Use a separate order at standard rates.`);
       if (qty > bi.balance) throw new HttpError(422, at + `only ${bi.balance} boxes of ${p.name} are left on booklet ${bk.no}.`);
-      rate = bi.net_rate;
+      rate = bi.net_rate; source = 'booklet';
+    }
+    if (!lot && !bk) {
+      // Standard order line: the customer's own price list first, then the best running scheme. A contract rate takes no scheme on top.
+      const pr = prices.get(p.id); if (pr) { rate = listRate = pr.rate; source = pr.source; }
+      const g = source === 'customer' ? null : bestScheme(schemes, p.id, qty, p.units_per_box, rate);
+      if (g) { sch = g.scheme; free = g.free; rate = round(rate * (1 - g.disc / 100), 4); }
     }
     const v = round(qty * p.units_per_box * rate); value += v;
-    items.push({ p, qty, rate, v, batch });
+    items.push({ p, qty, rate, v, batch, listRate, source, sch, free });
   }
   value = round(value);
   const credit = await creditSnapshot(cust.id), over = value > credit.available;
@@ -309,7 +317,7 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`,
       [no, s.id, cust.id, bk?.id ?? null, today, term?.id ?? cust.payment_term_id ?? null, txt(body.delivery_address, 300) ?? cust.address ?? null, txt(body.contact_person, 100) ?? cust.contact_person ?? null,
         txt(body.contact_phone, 30) ?? cust.phone ?? null, body.transport === 'Customer' ? 'Customer' : 'Company', txt(body.transporter, 100), txt(body.vehicle_no, 30), txt(body.remarks, 500), value, over])).rows[0];
-    for (const i of items) await c.query('insert into sales_order_items(order_id,product_id,qty,units_per_box,rate,value,batch_id,batch_no,expiry_date,non_returnable) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [o.id, i.p.id, i.qty, i.p.units_per_box, i.rate, i.v, i.batch?.id ?? null, i.batch?.batch_no ?? null, i.batch?.expiry_date ?? null, !!i.batch]);
+    for (const i of items) await c.query('insert into sales_order_items(order_id,product_id,qty,units_per_box,rate,value,batch_id,batch_no,expiry_date,non_returnable,list_rate,scheme_id,scheme_text,free_qty,price_source) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [o.id, i.p.id, i.qty, i.p.units_per_box, i.rate, i.v, i.batch?.id ?? null, i.batch?.batch_no ?? null, i.batch?.expiry_date ?? null, !!i.batch, i.listRate, i.sch?.id ?? null, i.sch ? `${i.sch.code}: ${i.sch.text}` : null, i.free, i.source]);
     await c.query('insert into approvals(doc_type,doc_id,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6)', ['order', o.id, s.id, s.name, 'Submitted', over ? 'Over credit limit at submission' : null]);
     return { id: o.id as number, no, value, over_limit: over, dda_expired: credit.dda_expired as boolean, customer: cust.name as string };
   }
@@ -362,7 +370,7 @@ export async function actOrder(s: Session, id: number, b: any, ip: string | null
 /** One row per order line for the people who key approved orders into the accounting software. */
 export async function exportRows(day: string) {
   return q<any>(
-    `select o.no, o.order_date, c.code as customer_code, c.name as customer, p.code as product_code, p.name as product, i.qty as boxes, i.units_per_box, i.rate, i.value, coalesce(i.batch_no,'') as batch, i.non_returnable, t.name as payment_term, o.transport, b.no as booklet_no, u.code as sales_officer
+    `select o.no, o.order_date, c.code as customer_code, c.name as customer, p.code as product_code, p.name as product, i.qty as boxes, i.free_qty as free_boxes, i.units_per_box, i.rate, i.value, coalesce(i.scheme_text,'') as scheme, coalesce(i.batch_no,'') as batch, i.non_returnable, t.name as payment_term, o.transport, b.no as booklet_no, u.code as sales_officer
        from sales_orders o join sales_order_items i on i.order_id=o.id join products p on p.id=i.product_id join customers c on c.id=o.customer_id join users u on u.id=o.user_id
        left join payment_terms t on t.id=o.payment_term_id left join booklets b on b.id=o.booklet_id
       where o.status in ('Approved','Dispatched') and (o.decided_at at time zone 'Asia/Kathmandu')::date = $1::date order by o.no, i.id`, [day]);
