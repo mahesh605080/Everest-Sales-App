@@ -8,10 +8,21 @@ type Item = { href: string; label: string };
 type Group = { group: string; items: Item[] };
 const SOON = [['Android and iOS app', 'Next'], ['Samples, competitor info', 'Next'], ['Order PDF, SMS and push', 'Next']];
 
-export default function Shell({ user, nav, titles, children }: { user: { name: string; role_name: string; must_change_password: boolean }; nav: Group[]; titles: Record<string, [string, string]>; children: React.ReactNode }) {
+export default function Shell({ user, nav, titles, today, children }: { user: { name: string; role_name: string; must_change_password: boolean }; nav: Group[]; titles: Record<string, [string, string]>; today?: string; children: React.ReactNode }) {
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const [toastMsg, setToast] = useState('');
+  const [bell, setBell] = useState(false); const [notes, setNotes] = useState<{ unread: number; items: any[] }>({ unread: 0, items: [] }); const [install, setInstall] = useState<any>(null);
+  useEffect(() => {
+    const load = () => call('/api/notifications').then(setNotes).catch(() => {});
+    load(); const t = setInterval(load, 60000);
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    const onInstall = (e: any) => { e.preventDefault(); setInstall(e); };
+    window.addEventListener('beforeinstallprompt', onInstall);
+    return () => { clearInterval(t); window.removeEventListener('beforeinstallprompt', onInstall); };
+  }, []);
+  async function openNote(n: any) { if (!n.read) await call('/api/notifications', { method: 'POST', json: { id: n.id } }).catch(() => {}); window.location.href = n.link || '/dashboard'; }
+  async function readAll() { await call('/api/notifications', { method: 'POST', json: { id: 'all' } }).catch(() => {}); setNotes(n => ({ unread: 0, items: n.items.map(i => ({ ...i, read: true })) })); }
   const glow = useRef<HTMLDivElement>(null), prog = useRef<HTMLDivElement>(null), top = useRef<HTMLDivElement>(null);
   const key = Object.keys(titles).filter(k => path.startsWith(k)).sort((a, b) => b.length - a.length)[0];
   const [title, sub] = titles[key] || ['Everest SFA', ''];
@@ -59,7 +70,7 @@ export default function Shell({ user, nav, titles, children }: { user: { name: s
 
   // Cards below the fold rise in as they are scrolled to.
   useEffect(() => {
-    setMenu(false);
+    setMenu(false); setBell(false);
     if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion:reduce)').matches) return;
     const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -6% 0px' });
     const t = setTimeout(() => document.querySelectorAll('#view .card:not(.rv)').forEach(c => { if (c.getBoundingClientRect().top > innerHeight * 0.92) { c.classList.add('rv'); io.observe(c); } }), 60);
@@ -89,11 +100,24 @@ export default function Shell({ user, nav, titles, children }: { user: { name: s
           <div className="top" id="top" ref={top}>
             <div><h1>{title}</h1><p>{sub}</p></div>
             <div className="ctl">
+              {today && <span className="code today">{today}</span>}
               <div className="usermenu">
-                <button onClick={() => setMenu(m => !m)} aria-expanded={menu} aria-haspopup="menu">
+                <button onClick={() => { setBell(b => !b); setMenu(false); }} aria-expanded={bell} aria-label={`Notifications, ${notes.unread} unread`} style={{ position: 'relative' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /></svg>
+                  {notes.unread > 0 && <span className="badge" style={{ position: 'absolute', top: -2, right: -2 }}>{notes.unread > 99 ? '99+' : notes.unread}</span>}
+                </button>
+                {bell && <div className="menu" style={{ width: 340, maxWidth: '86vw', maxHeight: 420, overflowY: 'auto' }}>
+                  <div className="hd" style={{ padding: '4px 8px' }}><b>Notifications</b>{notes.unread > 0 && <button onClick={readAll} style={{ color: 'var(--accent)', fontSize: 12 }}>Mark all read</button>}</div>
+                  {notes.items.map(n => <button key={n.id} onClick={() => openNote(n)} style={{ display: 'block', whiteSpace: 'normal', borderLeft: n.read ? '3px solid transparent' : '3px solid var(--accent2)' }}>
+                    <b style={{ fontWeight: n.read ? 500 : 700 }}>{n.title}</b>{n.body && <><br /><span className="sub">{n.body}</span></>}<br /><span className="code">{new Date(n.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kathmandu' })}</span></button>)}
+                  {!notes.items.length && <p className="sub" style={{ padding: 8 }}>Nothing yet. Approvals and decisions on your requests will appear here.</p>}
+                </div>}
+              </div>
+              <div className="usermenu">
+                <button onClick={() => { setMenu(m => !m); setBell(false); }} aria-expanded={menu} aria-haspopup="menu">
                   <div className="av">{initials(user.name)}</div><div>{user.name}<br /><span className="code">{user.role_name}</span></div>
                 </button>
-                {menu && <div className="menu" role="menu"><Link href="/profile" role="menuitem">Change password</Link><button role="menuitem" onClick={logout}>Log out</button></div>}
+                {menu && <div className="menu" role="menu">{install && <button role="menuitem" onClick={async () => { install.prompt(); setInstall(null); }}>Install as an app</button>}<Link href="/profile" role="menuitem">Change password</Link><button role="menuitem" onClick={logout}>Log out</button></div>}
               </div>
             </div>
           </div>

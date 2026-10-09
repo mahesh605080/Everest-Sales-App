@@ -50,7 +50,7 @@ Still to come in Phase 2: the Android app (background tracking, mock-location de
 | Dispatch | Approved orders, daily Excel export (one row per order line) for manual entry, mark dispatched with invoice number |
 | New alerts | Approval waiting longer than the set hours; instrument expiring within the set days |
 
-Numbers look like `BK-8384-0001` and `SO-8384-0001`, where 8384 is the Nepali fiscal year 2083/84. The year switch is taken as 16 July; adjust `fyLabel` in `lib/sales.ts` if your books switch on a different day.
+Numbers look like `BK-8384-0001` and `SO-8384-0001`, where 8384 is the Nepali fiscal year 2083/84. The fiscal year is read from the BS calendar and turns on 1 Shrawan (`lib/bs.ts`).
 
 Not in this phase: a printable order PDF, and editing a sent-back booklet (the user creates a new one).
 
@@ -91,10 +91,17 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Order print | "Print or save as PDF" on every sales order opens a clean page for the browser's print dialog |
 | Revise a booklet | A sent-back booklet has a Revise button that reopens it with its lines filled in; submitting creates a new booklet number |
 | Scheduled alerts | `GET /api/cron/alerts?key=CRON_SECRET` runs the rules without anyone logged in. Point any scheduler at it every 5 minutes |
-| Smoke test | `npm run smoke` runs 57 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
+| Smoke test | `npm run smoke` runs 63 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
 | Free local testing | `docker-compose.local.yml` and `LOCAL-TESTING.md` run everything on one computer with sample data |
 
-Not built yet: the Android/iOS app (background tracking, mock-location detection, push), SMS notifications, BS dates.
+| Notifications | A bell in the top bar: approvers are told when a booklet, order, expense, claim, leave or tour plan is waiting for them, and the creator is told about every decision. Click a line to open the page |
+| Installable | The site has a web-app manifest and a small service worker, so Chrome on Android offers "Install as an app" (also in the user menu). The service worker never caches data; without network it shows a plain "no connection" page |
+| Nepali date | The top bar shows today's date in AD and BS. Booklet and order numbers take the fiscal year from the BS calendar (it turns on 1 Shrawan) |
+| Session security | A temporary password blocks every screen and API except changing it. Changing or resetting a password, or deactivating a person, signs out all their other sessions |
+
+Sample users created by `seed -- --sample` are not forced to change their password, so testing is quick; real users added by Admin or by import always are.
+
+Not built yet: the Android/iOS app (background tracking, mock-location detection, push), SMS notifications, BS date pickers on forms (dates are entered in AD).
 
 ## Run it on your own computer (for a developer)
 
@@ -193,6 +200,7 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 | `POST /api/photo`, `GET /api/photo/{id}` | Upload a proof photo (JPEG data URL) and read it back |
 | `GET /api/stock?customer=`, `GET /api/stock`, `POST /api/stock` | Distributor stock: last report for a customer, latest view, save today's report |
 | `GET /api/perf?month=`, `GET /api/perf?view=overview`, `PUT /api/targets`, `GET /api/reports/{key}?from=&to=&month=` | Scorecard rows, control-room summary, set targets, download a report |
+| `GET /api/notifications`, `POST /api/notifications` (`{id}` or `{id:"all"}`) | Bell: unread count and latest 30, mark read |
 | `GET /api/alerts?open=1`, `POST /api/alerts/ack`, `GET/PUT /api/alerts/rules` | Alerts |
 
 ## How the code is organised

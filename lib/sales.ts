@@ -5,16 +5,15 @@ import { listRows } from './crud';
 import { ENT } from './entities';
 import { teamScope, TODAY } from './field';
 import { can, Session } from './perm';
+import { fyLabel } from './bs';
+import { notify, roleInTerritory, withPerm } from './notify';
+
+export { fyLabel };
 
 const CHAIN = ['asm', 'rsm', 'gm'];
 const setting = async (key: string, def: number) => Number((await q1<any>('select value from settings where key=$1', [key]))?.value ?? def);
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
-/** Nepali fiscal year label such as 8384 for 2083/84. The year turns in mid-July; 16 July is used as the switch. */
-export function fyLabel(isoDate: string) {
-  const y = +isoDate.slice(0, 4), bs = isoDate.slice(5) >= '07-16' ? y + 57 : y + 56;
-  return String(bs % 100).padStart(2, '0') + String((bs + 1) % 100).padStart(2, '0');
-}
 const nptDate = async () => (await q1<any>(`select ${TODAY}::text as d`))!.d as string;
 const trail = (type: string, id: number, s: Session, level: string | null, action: string, remarks?: string) =>
   q('insert into approvals(doc_type,doc_id,level,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6,$7)', [type, id, level, s.id, s.name, action, remarks || null]);
@@ -172,6 +171,7 @@ export async function createBooklet(s: Session, body: any, ip: string | null) {
     await c.query('insert into approvals(doc_type,doc_id,level,user_id,user_name,action) values($1,$2,$3,$4,$5,$6)', ['booklet', b.id, null, s.id, s.name, 'Submitted']);
     await c.query('commit');
     await audit(s, 'create', 'booklets', b.id, null, { no, customer: cust.name, max_variance: maxVar }, ip);
+    await notify(await roleInTerritory(CHAIN[startIdx], s.id), `Booklet ${no} needs your approval`, `${s.name} · ${cust.name} · ${maxVar.toFixed(1)}% below base`, '/booklets');
     return { id: b.id, no, level: CHAIN[startIdx], final_level: CHAIN[finalIdx] };
   } catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
 }
@@ -196,6 +196,8 @@ export async function actBooklet(s: Session, id: number, b: any, ip: string | nu
   }
   await q('update booklets set status=$1, level=$2, updated_at=now() where id=$3', [status, level, id]);
   await trail('booklet', id, s, bk.level, action, remarks);
+  await notify([bk.user_id], `Booklet ${bk.no}: ${action.toLowerCase()}`, `${s.name}${remarks ? ' · ' + remarks : ''}`, '/booklets');
+  if (status === 'Pending' && level) await notify(await roleInTerritory(level, bk.user_id), `Booklet ${bk.no} needs your approval`, `${bk.person} · ${bk.customer}`, '/booklets');
   await audit(s, action.toLowerCase(), 'booklets', id, { status: bk.status, level: bk.level }, { status, level, remarks }, ip);
   return { status, level };
 }
@@ -273,6 +275,7 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
     await c.query('insert into approvals(doc_type,doc_id,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6)', ['order', o.id, s.id, s.name, 'Submitted', over ? 'Over credit limit at submission' : null]);
     await c.query('commit');
     await audit(s, 'create', 'sales_orders', o.id, null, { no, customer: cust.name, value, over_limit: over }, ip);
+    await notify(await withPerm('credit.manage'), `Sales order ${no} is waiting${over ? ' (over limit)' : ''}`, `${s.name} · ${cust.name} · Rs ${Math.round(value).toLocaleString('en-IN')}`, '/credit');
     return { id: o.id, no, value, over_limit: over, dda_expired: credit.dda_expired };
   } catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
 }
@@ -301,6 +304,8 @@ export async function actOrder(s: Session, id: number, b: any, ip: string | null
   } else throw new HttpError(422, 'Unknown action.');
   await q('update sales_orders set status=$1, updated_at=now() where id=$2', [status, id]);
   await trail('order', id, s, null, action, remarks || (b.invoice_no ? `Invoice ${b.invoice_no}` : ''));
+  if (o.user_id !== s.id) await notify([o.user_id], `Sales order ${o.no}: ${action.toLowerCase()}`, `${o.customer}${remarks ? ' · ' + remarks : ''}`, '/orders');
+  if (status === 'Approved') await notify(await withPerm('dispatch.manage'), `Sales order ${o.no} is ready for dispatch`, o.customer, '/credit');
   await audit(s, action.toLowerCase(), 'sales_orders', id, { status: o.status }, { status, remarks }, ip);
   return { status };
 }

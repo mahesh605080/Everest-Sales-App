@@ -13,8 +13,8 @@ const secret = () => {
   }
   return new TextEncoder().encode(s);
 };
-export const signToken = (uid: number) =>
-  new SignJWT({ uid }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('30d').sign(secret());
+export const signToken = (uid: number, tv = 0) =>
+  new SignJWT({ uid, tv }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('30d').sign(secret());
 
 export async function getSession(): Promise<Session | null> {
   let tok = (await cookies()).get(COOKIE)?.value;
@@ -25,16 +25,17 @@ export async function getSession(): Promise<Session | null> {
     return await q1<Session>(
       `select u.id,u.code,u.name,u.phone,u.email,u.region_id,u.area_id,u.must_change_password,
               r.key as role,r.name as role_name,r.level,r.permissions
-         from users u join roles r on r.id=u.role_id where u.id=$1 and u.active and r.active`, [payload.uid]);
+         from users u join roles r on r.id=u.role_id where u.id=$1 and u.active and r.active and u.token_version=$2`, [payload.uid, Number(payload.tv) || 0]);
   } catch { return null; }
 }
 
 export class HttpError extends Error {
   constructor(public status: number, msg: string, public fields?: Record<string, string>) { super(msg); }
 }
-export async function need(perm?: string | string[]): Promise<Session> {
+export async function need(perm?: string | string[], opts: { allowTemporaryPassword?: boolean } = {}): Promise<Session> {
   const s = await getSession();
   if (!s) throw new HttpError(401, 'Please log in again.');
+  if (s.must_change_password && !opts.allowTemporaryPassword) throw new HttpError(403, 'Change your temporary password first.');
   const list = perm ? (Array.isArray(perm) ? perm : [perm]) : [];
   if (list.length && !list.some(p => can(s, p))) throw new HttpError(403, 'Your role does not allow this.');
   return s;

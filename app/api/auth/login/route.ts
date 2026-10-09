@@ -26,7 +26,7 @@ export const POST = api(async req => {
   }
   await q('update users set failed_logins=0, locked_until=null, last_login_at=now() where id=$1', [u.id]);
   await audit(u, 'login', 'auth', u.id, null, null, ip);
-  const token = await signToken(u.id);
+  const token = await signToken(u.id, u.token_version);
   const res = NextResponse.json({ token, user: { id: u.id, code: u.code, name: u.name, role: u.role, role_name: u.role_name, must_change_password: u.must_change_password } });
   res.cookies.set(COOKIE, token, {
     httpOnly: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30,

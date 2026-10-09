@@ -31,7 +31,8 @@ async function main() {
   const so = new User('SO01'), so2 = new User('SO02'), asm = new User('ASM01'), rsm = new User('RSM01'), gm = new User('GM01'), cc = new User('CC01'), admin = new User('ADMIN');
   ok('wrong password is refused', (await new User('SO01').login('wrong-password')) === 401);
   for (const u of [so, so2, asm, rsm, gm, cc]) ok(`login ${u.code}`, (await u.login()) === 200);
-  if ((await admin.login()) !== 200) console.log('note  ADMIN password was changed; admin-only checks are skipped');
+  if ((await admin.login()) === 200) ok('a temporary password blocks everything except changing it', (await admin.get('/api/m/regions')).status === 403);
+  else console.log('note  ADMIN password was changed; that check is skipped');
   ok('no session is refused', (await new User('x').get('/api/m/customers')).status === 401);
 
   // territory
@@ -84,8 +85,10 @@ async function main() {
   ok('ASM approval accepts the small booklet', (await asm.post(`/api/booklets/${small.id}`, { action: 'approve' })).data.status === 'Accepted');
   await asm.post(`/api/booklets/${big.id}`, { action: 'approve' }); await rsm.post(`/api/booklets/${big.id}`, { action: 'approve' });
   ok('reject needs remarks', (await gm.post(`/api/booklets/${big.id}`, { action: 'reject' })).status === 422);
+  ok('the ASM was notified about the new booklet', (await asm.get('/api/notifications')).data.items.some((n: any) => n.title.includes(small.no)));
   ok('GM gives the final approval', (await gm.post(`/api/booklets/${big.id}`, { action: 'approve' })).data.status === 'Accepted');
 
+  ok('the creator is notified of the decision', (await so.get('/api/notifications')).data.items.some((n: any) => n.title.includes(big.no) && n.title.includes('final')));
   // orders
   ok('order cannot exceed the booklet balance', (await so.post('/api/orders', { customer_id: c1.id, booklet_id: small.id, items: [{ product_id: ns.id, qty: 101 }] })).status === 422);
   const o1 = (await so.post('/api/orders', { customer_id: c1.id, booklet_id: small.id, items: [{ product_id: ns.id, qty: 40 }] })).data;
@@ -126,6 +129,15 @@ async function main() {
   ok('report downloads as Excel', rep.status === 200 && (rep.data as ArrayBuffer).byteLength > 3000);
   ok('credit report is hidden from sales managers', (await gm.get('/api/reports/credit')).status === 404);
   ok('end of day', (await so.post('/api/field/checkout', { actual: 95000, ...here })).status === 200);
+
+  // changing a password signs out every other session of that person
+  const second = new User('SO02'); await second.login();
+  const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });
+  ok('password change works', ch.status === 200);
+  ok('other sessions are signed out after a password change', (await second.get('/api/auth/me')).status === 401);
+  so2.cookie = (ch.headers.get('set-cookie') || '').split(';')[0];
+  ok('the session that changed the password stays signed in', (await so2.get('/api/auth/me')).status === 200);
+  await so2.post('/api/auth/password', { current: PW + '-new1', next: PW }); // put it back so the test can run again on the same day's database
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

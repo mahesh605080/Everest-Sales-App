@@ -56,7 +56,7 @@ Ye Docker file likhi gayi hai par jis jagah app bana wahan Docker nahi tha, isli
 | Sales Officer (Birgunj) | SO01 | Everest@123 |
 | Sales Officer (Biratnagar) | SO02 | Everest@123 |
 
-Pehli baar login par password badalne ko kaha jayega.
+ADMIN ko pehli baar login par password badalna padega (tab tak koi aur screen nahi khulegi). Sample users (GM01, SO01 ...) seedha chal jayenge.
 
 ## Kya test karna hai (ek poora chakkar)
 

@@ -1,8 +1,8 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 
-export const metadata: Metadata = { title: 'Everest SFA', description: 'Sales force monitoring and control for Everest Parenterals' };
-export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
+export const metadata: Metadata = { title: 'Everest SFA', appleWebApp: { capable: true, title: 'Everest SFA' }, icons: { apple: '/icon-192.png' }, description: 'Sales force monitoring and control for Everest Parenterals' };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#1C5CAB' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

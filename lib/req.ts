@@ -6,6 +6,7 @@ import { ENT } from './entities';
 import { metres, teamScope, TODAY } from './field';
 import { can, Session } from './perm';
 import { REQ, ReqDef, RField } from './reqdefs';
+import { managerOf, notify, withPerm } from './notify';
 
 export function reqDef(key: string): ReqDef {
   const d = REQ[key]; if (!d) throw new HttpError(404, 'Unknown list.'); return d;
@@ -78,6 +79,8 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
   if (alert && (await q1<any>(`select enabled from alert_rules where key='expense_gps'`))?.enabled)
     await q(`insert into alerts(rule,severity,user_id,message,day,key) values('expense_gps','warn',$1,$2,${TODAY},$3) on conflict(key) do nothing`, [s.id, alert, `expense_gps:${row!.id}`]);
   await audit(s, 'create', def.key, row!.id, null, v, ip);
+  const first = def.steps[0];
+  if (first) await notify(first.scope === 'team' ? [await managerOf(s.id)] : await withPerm(first.perm), `New ${def.one} from ${s.name}`, v.total != null ? `Rs ${v.total}` : v.amount != null ? `Rs ${v.amount}` : null, `/r/${def.key}`);
   return { id: row!.id, over_gps: !!v.over_gps, total: v.total };
 }
 
@@ -135,6 +138,9 @@ export async function actReq(def: ReqDef, s: Session, id: number, b: any, ip: st
   await q(`update ${def.table} set status=$1, updated_at=now() where id=$2`, [status, id]);
   await q('insert into approvals(doc_type,doc_id,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6)', [def.key, id, s.id, s.name, action, remarks || null]);
   await audit(s, action.toLowerCase(), def.key, id, { status: row.status }, { status, remarks }, ip);
+  await notify([row.user_id], `Your ${def.one}: ${status.toLowerCase()}`, `${s.name}${remarks ? ' · ' + remarks : ''}`, `/r/${def.key}`);
+  const nxt = def.steps.find(x => x.from === status);
+  if (nxt && nxt.scope === 'all') await notify(await withPerm(nxt.perm), `${def.one[0].toUpperCase() + def.one.slice(1)} approved, waiting for you`, null, `/r/${def.key}`);
   return { status, message: status === 'Rejected' ? 'Rejected.' : st.done };
 }
 

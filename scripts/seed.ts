@@ -58,8 +58,8 @@ async function main() {
     const uid = async (c: string) => (await q1<any>('select id from users where code=$1', [c]))?.id ?? null;
     const addUser = async (code: string, name: string, phone: string, roleKey: string, mgr: string | null, regionCode: string | null, areaCode: string | null) => {
       const a = areaCode ? await area(areaCode) : null;
-      await q(`insert into users(code,name,phone,password_hash,role_id,manager_id,region_id,area_id,join_date)
-               values($1,$2,$3,$4,$5,$6,$7,$8,'2024-07-16') on conflict(code) do nothing`,
+      await q(`insert into users(code,name,phone,password_hash,role_id,manager_id,region_id,area_id,join_date,must_change_password)
+               values($1,$2,$3,$4,$5,$6,$7,$8,'2024-07-16',false) on conflict(code) do nothing`,
         [code, name, phone, hash, await role(roleKey), mgr ? await uid(mgr) : null, a ? a.region_id : regionCode ? await reg(regionCode) : null, a ? a.id : null]);
     };
     await addUser('GM01', 'Anil Joshi', '9800000001', 'gm', null, null, null);

@@ -113,6 +113,7 @@ export async function saveRow(ent: Entity, s: Session, id: number | null, body: 
     if (!errs.password && (pw || !id)) {
       vals.password_hash = await bcrypt.hash(pw || defaultPassword(), 10);
       vals.must_change_password = true; vals.failed_logins = 0; vals.locked_until = null;
+      if (id) vals.token_version = ((await q1<any>('select token_version from users where id=$1', [id]))?.token_version ?? 0) + 1; // signs the person out everywhere
     }
   }
   if (Object.keys(errs).length) throw new HttpError(422, Object.values(errs)[0], errs);
@@ -155,6 +156,7 @@ export async function setActive(ent: Entity, s: Session, id: number, active: boo
   const before = await q1(`select * from ${ent.table} where id=$1`, [id]);
   if (!before) throw new HttpError(404, `This ${ent.one} no longer exists.`);
   const row = await q1(`update ${ent.table} set active=$1, updated_at=now(), updated_by=$2 where id=$3 returning *`, [active, s.id, id]);
+  if (ent.key === 'employees' && !active) await q('update users set token_version=token_version+1 where id=$1', [id]);
   if (ent.key === 'employees' && !active) await q('update customer_assignments set to_date=current_date where user_id=$1 and to_date is null', [id]);
   await audit(s, active ? 'activate' : 'deactivate', ent.key, id, before, row, ip);
   return { id };

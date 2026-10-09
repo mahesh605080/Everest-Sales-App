@@ -3,6 +3,7 @@ import { HttpError } from './auth';
 import { audit } from './audit';
 import { teamScope } from './field';
 import { Session } from './perm';
+import { managerOf, notify } from './notify';
 
 const okMonth = (m: any) => typeof m === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
 const counts = `(select count(*)::int from tour_plan_items i where i.plan_id=p.id) as planned,
@@ -36,6 +37,7 @@ export async function savePlan(s: Session, b: any, submit: boolean, ip: string |
   for (const i of items) await q('insert into tour_plan_items(plan_id,day,customer_id,note) values($1,$2,$3,$4)', [plan.id, i.day, Number(i.customer_id), String(i.note || '').slice(0, 200) || null]);
   await q(`update tour_plans set status=$1, submitted_at=$2, updated_at=now() where id=$3`, [submit ? 'Submitted' : plan.status === 'Sent back' ? 'Sent back' : 'Draft', submit ? new Date() : plan.submitted_at, plan.id]);
   if (submit) await audit(s, 'submit', 'tour_plans', plan.id, null, { month: b.month, visits: items.length }, ip);
+  if (submit) await notify([await managerOf(s.id)], `Tour plan for ${b.month} from ${s.name}`, `${items.length} planned visits`, '/plan');
   return { ok: true };
 }
 
@@ -63,6 +65,7 @@ export async function decidePlan(s: Session, b: any, ip: string | null) {
   if (!approve && b.action !== 'back') throw new HttpError(422, 'Choose approve or send back.');
   if (!approve && !remarks) throw new HttpError(422, 'Write what should be corrected before sending the plan back.');
   await q('update tour_plans set status=$1, remarks=$2, decided_by=$3, decided_at=now(), updated_at=now() where id=$4', [approve ? 'Approved' : 'Sent back', remarks || null, s.id, plan.id]);
+  await notify([plan.user_id], `Tour plan ${plan.month}: ${approve ? 'approved' : 'sent back'}`, `${s.name}${remarks ? ' · ' + remarks : ''}`, '/plan');
   await audit(s, approve ? 'approve' : 'send-back', 'tour_plans', plan.id, { status: plan.status }, { status: approve ? 'Approved' : 'Sent back', remarks }, ip);
   return { ok: true };
 }

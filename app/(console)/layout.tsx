@@ -3,6 +3,10 @@ import Shell from '@/components/Shell';
 import { getSession } from '@/lib/auth';
 import { ENT } from '@/lib/entities';
 import { can } from '@/lib/perm';
+import { q1 } from '@/lib/db';
+import { TODAY } from '@/lib/field';
+import { toBs } from '@/lib/bs';
+import Profile from './profile/page';
 import { REQ } from '@/lib/reqdefs';
 
 export const dynamic = 'force-dynamic';
@@ -58,5 +62,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   for (const d of Object.values(REQ)) titles[`/r/${d.key}`] = [d.label, d.intro];
   titles['/stock'] = ['Distributor stock', 'What each distributor holds, how fast it sells and what is near expiry'];
   for (const e of Object.values(ENT)) titles[`/m/${e.key}`] = [e.label, e.note || `Add, edit, import and export ${e.label.toLowerCase()}`];
-  return <Shell user={{ name: s.name, role_name: s.role_name, must_change_password: s.must_change_password }} nav={nav} titles={titles}>{children}</Shell>;
+  const ad = (await q1<any>(`select ${TODAY}::text d`))!.d as string;
+  const today = new Date(ad + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) + ' · ' + toBs(ad).text + ' BS';
+  // A person on a temporary password can do nothing until it is changed.
+  return <Shell user={{ name: s.name, role_name: s.role_name, must_change_password: s.must_change_password }} nav={s.must_change_password ? [] : nav} titles={titles} today={today}>{s.must_change_password ? <Profile /> : children}</Shell>;
 }
