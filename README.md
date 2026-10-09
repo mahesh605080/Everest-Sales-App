@@ -117,6 +117,17 @@ The system's first job is to get more orders in with less effort. These screens 
 
 `no_order_days` and `reorder_cover_days` are in Settings.
 
+## Stock and expiry (sell before it expires)
+
+- **Company stock by batch** — Credit Control or the GM uploads an Excel/CSV file (product code, batch, expiry, boxes, location). A "whole stock" file sets missing batches to zero; a "some batches" file only updates what it lists. Bad rows are listed, not silently dropped.
+- **Expiry ladder** — stock value by time to expiry (expired, 0–3, 3–6, 6–9, 9–12, over 12 months).
+- **Will not sell in time** — for each product the batches are walked earliest-expiry-first against the sale rate of the last 90 days; what cannot be sold before the minimum shelf life is shown as boxes and rupees at risk. A weekly alert goes to the General Managers.
+- **Offer slabs** — a discount and/or bonus by months to expiry (default 30% under 3 months, 15% for 3–6 months), editable by GM and Credit Control.
+- **Find buyers** — for a batch, the customers whose monthly offtake can use it before it expires, less what they already hold, limited to the viewer's territory. One tap opens an order for that lot.
+- **Near-expiry lot orders** — priced at the offer rate without a booklet, limited to the free boxes of the batch, and marked non-returnable on the order and the print. An expiry claim for such a batch from the same customer is refused.
+- **Earliest expiry first (FEFO)** — every pending order shows which batches to send; the plan is recorded at dispatch.
+- Settings: `near_expiry_months`, `min_shelf_life_months`, `max_cover_months`.
+
 ## Experience upgrades
 
 | Area | What works now |

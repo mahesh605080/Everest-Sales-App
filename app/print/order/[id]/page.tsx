@@ -29,7 +29,7 @@ export default async function PrintOrder({ params }: { params: Promise<{ id: str
         </div>
         <div style={{ overflowX: 'auto' }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
           <thead><tr>{['#', 'Code', 'Product', 'Boxes', 'Units/box', 'Units', 'Rate', 'Value'].map((h, i) => <th key={h} style={{ ...cell, background: '#eee', textAlign: i > 2 ? 'right' : 'left', color: '#000', fontSize: 12, textTransform: 'none', letterSpacing: 0 }}>{h}</th>)}</tr></thead>
-          <tbody>{d.items.map((i: any, n: number) => <tr key={i.id}><td style={cell}>{n + 1}</td><td style={cell}>{i.product_code}</td><td style={cell}>{i.product}{i.pack_size ? `, ${i.pack_size}` : ''}</td>
+          <tbody>{d.items.map((i: any, n: number) => <tr key={i.id}><td style={cell}>{n + 1}</td><td style={cell}>{i.product_code}</td><td style={cell}>{i.product}{i.pack_size ? `, ${i.pack_size}` : ''}{i.batch_no ? ` · batch ${i.batch_no}` : ''}{i.non_returnable ? ' · near-expiry lot, non-returnable' : ''}</td>
             <td style={{ ...cell, textAlign: 'right' }}>{i.qty}</td><td style={{ ...cell, textAlign: 'right' }}>{i.units_per_box}</td><td style={{ ...cell, textAlign: 'right' }}>{i.qty * i.units_per_box}</td><td style={{ ...cell, textAlign: 'right' }}>{Number(i.rate).toFixed(2)}</td><td style={{ ...cell, textAlign: 'right' }}>{rs(i.value)}</td></tr>)}
             <tr><td style={{ ...cell, textAlign: 'right', fontWeight: 700 }} colSpan={7}>Order value</td><td style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{rs(o.value)}</td></tr></tbody>
         </table></div>

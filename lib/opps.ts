@@ -3,7 +3,8 @@ import { HttpError } from './auth';
 import { listRows } from './crud';
 import { ENT } from './entities';
 import { teamScope, TODAY } from './field';
-import { Session } from './perm';
+import { can, Session } from './perm';
+import { expiryOpportunities } from './inventory';
 
 const setting = async (key: string, def: number) => Number((await q1<any>('select value from settings where key=$1', [key]))?.value ?? def);
 
@@ -48,8 +49,9 @@ export async function opportunities(s: Session) {
         and not exists(select 1 from sales_orders o join sales_order_items oi on oi.order_id=o.id where o.customer_id=c.id and oi.product_id=pr.id and o.order_date >= r.day and o.status not in ('Rejected','Withdrawn'))
       order by cover_days, c.name limit 100`, p3);
 
-  return { settings: { no_order_days: noOrder, reorder_cover_days: cover }, booklets, lapsed, reorder,
-    totals: { booklet_value: booklets.reduce((a, b) => a + b.value_left, 0), lapsed: lapsed.length, reorder: reorder.length } };
+  const expiry = can(s, 'inventory.view') ? await expiryOpportunities(s) : [];
+  return { settings: { no_order_days: noOrder, reorder_cover_days: cover }, booklets, lapsed, reorder, expiry,
+    totals: { booklet_value: booklets.reduce((a, b) => a + b.value_left, 0), lapsed: lapsed.length, reorder: reorder.length, expiry_value: expiry.reduce((a: number, e: any) => a + e.value, 0) } };
 }
 
 /** The lines of the customer's most recent order, to start a repeat order from. */

@@ -146,6 +146,39 @@ async function main() {
     ok('a full outstanding file zeroes customers that are not in it', up.updated === 1 && up.zeroed === 1 && (await so2.get(`/api/credit?customer=${other.id}`)).data.credit.outstanding === 0, up); }
   ok('health check answers', (await fetch(`${BASE}/api/health`)).status === 200);
 
+  // company stock by batch, expiry and near-expiry selling
+  { const day = (n: number) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    const send = async (u: User, csv: string, mode: string) => { const fd = new FormData(); fd.append('as_of', day(0)); fd.append('mode', mode); fd.append('file', new Blob([csv], { type: 'text/csv' }), 'stock.csv');
+      const r = await fetch(`${BASE}/api/expiry/stock`, { method: 'POST', headers: { cookie: u.cookie }, body: fd }); return { status: r.status, data: await r.json() }; };
+    const csv = `Product code,Batch,Expiry,Quantity (boxes),Location\nNS500,NS-A,${day(120)},200,Main\nNS500,NS-B,${day(600)},500,Main\nMTZ100,MT-X,${day(30)},60,Main\nD5500,D5-OLD,${day(-10)},15,Main\nNOPE,B1,${day(300)},5,Main\n`;
+    ok('a sales officer cannot upload company stock', (await send(so, csv, 'partial')).status === 403);
+    const up = (await send(cc, csv, 'partial')).data;
+    ok('stock upload takes good batches and lists the bad row', up.updated === 4 && up.failed === 1, up);
+    const pos = (await so.get('/api/expiry')).data, B = (n: string) => pos.rows.find((b: any) => b.batch_no === n);
+    ok('a batch 3 to 6 months from expiry carries the 15% offer', B('NS-A')?.offer?.discount_pct === 15 && Math.abs(B('NS-A').offer.rate - ns.trade_rate * 0.85) < 0.01, B('NS-A'));
+    ok('stock that normal sale cannot clear in time is shown at risk', B('NS-A').at_risk > 150 && B('NS-A').at_risk < 200 && B('NS-B').at_risk > 0 && B('NS-B').at_risk < 500, [B('NS-A').at_risk, B('NS-B').at_risk, B('NS-A').run_rate]);
+    ok('expired and too-short stock gets no offer', B('D5-OLD').expired && !B('D5-OLD').offer && B('MT-X').unsellable && !B('MT-X').offer);
+    ok('the expiry ladder adds up', pos.ladder[0].boxes === 15 && pos.ladder.reduce((a: number, l: any) => a + l.boxes, 0) === 775, pos.ladder);
+    const m = (await so.get(`/api/expiry?batch=${B('NS-A').id}&match=1`)).data;
+    ok('buyer matching finds the customer who can use the batch in time', m.buyers[0]?.id === c1.id && m.buyers[0].can_take === 200, m.buyers);
+    ok('buyer matching is limited to own customers', !(await so2.get(`/api/expiry?batch=${B('NS-A').id}&match=1`)).data.buyers.some((b: any) => b.id === c1.id));
+    ok('the selling list shows the near-expiry chance', (await so.get('/api/sales/opportunities')).data.expiry.some((e: any) => e.batch_no === 'NS-A' && e.customer_id === c1.id));
+    const lot = (qty: number, id = B('NS-A').id, extra: any = {}) => so.post('/api/orders', { customer_id: c1.id, ...extra, items: [{ product_id: ns.id, qty, batch_id: id }] });
+    ok('a lot order cannot exceed the batch', (await lot(201)).status === 422);
+    ok('a lot cannot be mixed with a booklet', (await lot(10, B('NS-A').id, { booklet_id: small.id })).status === 422);
+    ok('expired stock cannot be ordered', (await so.post('/api/orders', { customer_id: c1.id, items: [{ product_id: d5.id, qty: 1, batch_id: B('D5-OLD').id }] })).status === 422);
+    const lo = (await lot(50)).data, lod = (await so.get(`/api/orders/${lo.id}`)).data;
+    ok('lot order is priced at the offer rate and marked non-returnable', Math.abs(lo.value - 50 * ns.units_per_box * ns.trade_rate * 0.85) < 1 && lod.items[0].non_returnable === true && lod.items[0].batch_no === 'NS-A', [lo, lod.items]);
+    ok('ordered boxes leave the free stock', (await so.get(`/api/expiry?batch=${B('NS-A').id}`)).data.batch.free_boxes === 150);
+    const plain = (await so.post('/api/orders', { customer_id: c1.id, items: [{ product_id: ns.id, qty: 160 }] })).data, pd = (await so.get(`/api/orders/${plain.id}`)).data;
+    ok('an ordinary order is planned earliest-expiry-first', pd.items[0].fefo?.plan[0].batch_no === 'NS-A' && pd.items[0].fefo.plan[0].qty === 150 && pd.items[0].fefo.plan[1].batch_no === 'NS-B', pd.items[0].fefo);
+    await cc.post(`/api/orders/${lo.id}`, { action: 'approve', remarks: 'Near-expiry lot' });
+    const claim = (batch: string) => so.post('/api/req/claims', { customer_id: c1.id, type: 'Near expiry', product_id: ns.id, qty: 5, batch_no: batch, amount: 5000, remarks: 'Return of short-dated stock' });
+    ok('a non-returnable lot cannot come back as an expiry claim', (await claim('ns-a')).status === 422);
+    ok('a claim for another batch is accepted', (await claim('NS-OTHER')).status === 200);
+    ok('offer slabs are validated', (await gm.put('/api/expiry/offers', { slabs: [{ months_from: 0, months_to: 4, discount_pct: 30 }, { months_from: 3, months_to: 6, discount_pct: 15 }] })).status === 422 && (await so.put('/api/expiry/offers', { slabs: [] })).status === 403);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

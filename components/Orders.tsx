@@ -13,7 +13,7 @@ export function OrderDetail({ id, onDone }: { id: number; onDone: () => void }) 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="tbl"><table><thead><tr><th>Product</th><th className="r">Boxes</th><th className="r">Units/box</th><th className="r">Rate</th><th className="r">Value</th></tr></thead>
-        <tbody>{d.items.map((i: any) => <tr key={i.id}><td><b>{i.product}</b><br /><span className="code">{i.product_code} · {i.pack_size || ''}</span></td><td className="r num">{i.qty}</td><td className="r num">{i.units_per_box}</td><td className="r num">{i.rate.toFixed(2)}</td><td className="r num">{rs(i.value)}</td></tr>)}</tbody></table></div>
+        <tbody>{d.items.map((i: any) => <tr key={i.id}><td><b>{i.product}</b>{i.non_returnable && <span className="pill warn" style={{ marginLeft: 6 }}>Near-expiry lot · non-returnable</span>}<br /><span className="code">{i.product_code} · {i.pack_size || ''}{i.batch_no ? ` · batch ${i.batch_no}${i.expiry_date ? ', exp ' + i.expiry_date : ''}` : ''}</span>{i.fefo && <><br /><span className="sub">Send first: {i.fefo.plan.map((x: any) => `${x.batch_no} (exp ${x.expiry_date}) × ${x.qty}`).join(', ')}{i.fefo.short ? ` · ${i.fefo.short} boxes not in uploaded stock` : ''}</span></>}</td><td className="r num">{i.qty}</td><td className="r num">{i.units_per_box}</td><td className="r num">{i.rate.toFixed(2)}</td><td className="r num">{rs(i.value)}</td></tr>)}</tbody></table></div>
       <div className="g" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10 }}>
         <div><div className="lab">Payment term</div>{o.term || '–'}</div><div><div className="lab">Transport</div>{o.transport}{o.transporter ? ` · ${o.transporter}` : ''}{o.vehicle_no ? ` · ${o.vehicle_no}` : ''}</div>
         <div><div className="lab">Deliver to</div>{o.delivery_address || '–'}</div><div><div className="lab">Contact</div>{o.contact_person || '–'} {o.contact_phone || ''}</div>
@@ -41,11 +41,12 @@ export const OrderCard = ({ o, open, toggle, onDone }: { o: any; open: boolean; 
   </section>
 );
 
-type Init = { customer?: string; booklet?: string; repeat?: boolean; product?: string; qty?: string };
+type Init = { customer?: string; booklet?: string; repeat?: boolean; product?: string; qty?: string; batch?: string };
+type Line = { product_id: string; qty: string; batch_id?: number; lot?: any };
 function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
   const [custs, setCusts] = useState<any[]>([]); const [prods, setProds] = useState<any[]>([]); const [terms, setTerms] = useState<any[]>([]);
   const [cust, setCust] = useState(''); const [credit, setCredit] = useState<any>(null); const [bks, setBks] = useState<any[]>([]); const [bk, setBk] = useState(''); const [bkItems, setBkItems] = useState<any[]>([]);
-  const [lines, setLines] = useState<{ product_id: string; qty: string }[]>([{ product_id: '', qty: '10' }]);
+  const [lines, setLines] = useState<Line[]>([{ product_id: '', qty: '10' }]);
   const [f, setF] = useState({ payment_term_id: '', transport: 'Company', transporter: '', vehicle_no: '', remarks: '' }); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   useEffect(() => { call('/api/m/customers?size=500').then(r => setCusts(r.rows)).catch(e => setErr(e.message)); call('/api/m/products?size=500').then(r => setProds(r.rows)).catch(() => {}); call('/api/m/terms/options').then(r => setTerms(r.options)).catch(() => {}); }, []);
   const [note, setNote] = useState('');
@@ -63,16 +64,17 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
     call(`/api/booklets?box=usable&customer=${cust}`).then(r => { setBks(r.booklets); if (init?.customer === cust && init.booklet && r.booklets.some((b: any) => String(b.id) === init.booklet)) setBk(init.booklet); }).catch(() => {});
     if (init?.customer === cust && init.repeat) repeat(cust);
     if (init?.customer === cust && init.product) setLines([{ product_id: init.product, qty: init.qty || '10' }]);
+    if (init?.customer === cust && init.batch) call(`/api/expiry?batch=${init.batch}`).then(r => { const b = r.batch; if (!b.offer) { setNote(`Batch ${b.batch_no} has no near-expiry offer right now.`); return; } setLines([{ product_id: String(b.product_id), qty: init.qty || String(b.free_boxes), batch_id: b.id, lot: b }]); }).catch(e => setErr(e.message));
     setF(x => ({ ...x, payment_term_id: String(custs.find(c => String(c.id) === cust)?.payment_term_id ?? '') }));
   }, [cust, custs]);
   useEffect(() => { if (!bk) { setBkItems([]); setLines([{ product_id: '', qty: '10' }]); return; } call(`/api/booklets/${bk}`).then(r => { setBkItems(r.items); setLines(r.items.map((i: any) => ({ product_id: String(i.product_id), qty: String(Math.max(0, i.balance)) }))); }).catch(e => setErr(e.message)); }, [bk]);
   const P = useMemo(() => new Map(prods.map(p => [String(p.id), p])), [prods]);
-  const rate = (pid: string) => bk ? bkItems.find(i => String(i.product_id) === pid)?.net_rate ?? 0 : P.get(pid)?.trade_rate ?? 0;
+  const rate = (pid: string, lot?: any) => lot ? lot.offer.rate : bk ? bkItems.find(i => String(i.product_id) === pid)?.net_rate ?? 0 : P.get(pid)?.trade_rate ?? 0;
   const upb = (pid: string) => bk ? bkItems.find(i => String(i.product_id) === pid)?.units_per_box ?? 0 : P.get(pid)?.units_per_box ?? 0;
-  const value = lines.reduce((a, l) => a + (Number(l.qty) || 0) * upb(l.product_id) * rate(l.product_id), 0), over = credit && value > credit.available;
+  const value = lines.reduce((a, l) => a + (Number(l.qty) || 0) * upb(l.product_id) * rate(l.product_id, l.lot), 0), over = credit && value > credit.available;
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setErr(''); if (!cust) { setErr('Choose a customer.'); return; } setBusy(true);
-    try { const r = await call('/api/orders', { method: 'POST', json: { customer_id: Number(cust), booklet_id: bk ? Number(bk) : null, items: lines.filter(l => l.product_id), ...f } }); toast(`${r.no} sent to Credit Control${r.over_limit ? ' (over limit)' : ''}.`); onDone(); }
+    try { const r = await call('/api/orders', { method: 'POST', json: { customer_id: Number(cust), booklet_id: bk ? Number(bk) : null, items: lines.filter(l => l.product_id).map(l => ({ product_id: l.product_id, qty: l.qty, batch_id: l.batch_id })), ...f } }); toast(`${r.no} sent to Credit Control${r.over_limit ? ' (over limit)' : ''}.`); onDone(); }
     catch (x: any) { setErr(x.message); } finally { setBusy(false); }
   }
   return (
@@ -87,11 +89,12 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
       {credit && <CreditBox c={credit} />}
       {cust && !bk && <div className="toolbar"><div className="l"><button type="button" className="btn" onClick={() => repeat(cust)}>Repeat last order</button>{note && <span className="sub">{note}</span>}</div></div>}
       {lines.map((l, i) => { const p = bk ? bkItems.find(x => String(x.product_id) === l.product_id) : P.get(l.product_id); return <div key={i} style={{ background: 'var(--canvas)', borderRadius: 10, padding: 12, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', alignItems: 'end' }}>
-        {bk ? <div style={{ gridColumn: 'span 2' }}><div className="lab">Product (from booklet)</div><b>{p?.product}</b></div>
+        {l.lot ? <div style={{ gridColumn: 'span 2' }}><div className="lab">Near-expiry lot · non-returnable</div><b>{l.lot.product}</b><br /><span className="code">batch {l.lot.batch_no} · expires {l.lot.expiry_date} · {l.lot.offer.text} · {l.lot.free_boxes} boxes free</span></div>
+          : bk ? <div style={{ gridColumn: 'span 2' }}><div className="lab">Product (from booklet)</div><b>{p?.product}</b></div>
           : <div className="fld" style={{ gridColumn: 'span 2' }}><label htmlFor={`ol${i}-p`}>Product *</label><select id={`ol${i}-p`} value={l.product_id} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, product_id: e.target.value } : x))}><option value="">Select…</option>{prods.map(x => <option key={x.id} value={x.id}>{x.name} {x.pack_size || ''} ({x.code})</option>)}</select></div>}
         <div className="fld"><label htmlFor={`ol${i}-q`}>Boxes{bk && p ? ` (balance ${p.balance})` : ''}</label><input id={`ol${i}-q`} type="number" min={0} value={l.qty} onChange={e => setLines(ls => ls.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} /></div>
-        <div><div className="lab">Rate</div><div className="num">{rate(l.product_id) ? Number(rate(l.product_id)).toFixed(2) : '–'}</div></div>
-        <div><div className="lab">Value</div><div className="num">{rs((Number(l.qty) || 0) * upb(l.product_id) * rate(l.product_id))}</div></div>
+        <div><div className="lab">Rate</div><div className="num">{rate(l.product_id, l.lot) ? Number(rate(l.product_id, l.lot)).toFixed(2) : '–'}</div></div>
+        <div><div className="lab">Value</div><div className="num">{rs((Number(l.qty) || 0) * upb(l.product_id) * rate(l.product_id, l.lot))}</div></div>
         {!bk && lines.length > 1 && <div><button type="button" className="btn sm" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>Remove</button></div>}</div>; })}
       <div className="toolbar"><div className="l">{!bk && <button type="button" className="btn" onClick={() => setLines(ls => [...ls, { product_id: '', qty: '10' }])}>Add product</button>}</div>
         <div className="r">{credit && <span className={`pill ${over ? 'crit' : 'good'}`}>{over ? 'Over limit' : 'Within limit'}</span>}<b className="num">{rs(value)}</b></div></div>
@@ -105,7 +108,7 @@ function NewOrder({ onDone, init }: { onDone: () => void; init?: Init }) {
 export default function Orders({ canCreate, canAll }: { canCreate: boolean; canAll: boolean }) {
   const boxes = [canCreate && ['mine', 'My orders'], canAll && ['all', 'All']].filter(Boolean) as string[][];
   const [box, setBox] = useState(boxes[0]?.[0] || 'all'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<number | null>(null); const [adding, setAdding] = useState(false); const [flt, setFlt] = useState<Filter>(noFilter); const [init, setInit] = useState<Init | undefined>();
-  useEffect(() => { const u = new URLSearchParams(window.location.search); if (canCreate && u.get('customer')) { setInit({ customer: u.get('customer')!, booklet: u.get('booklet') || undefined, repeat: u.get('repeat') === '1', product: u.get('product') || undefined, qty: u.get('qty') || undefined }); setAdding(true); window.history.replaceState(null, '', '/orders'); } }, [canCreate]);
+  useEffect(() => { const u = new URLSearchParams(window.location.search); if (canCreate && u.get('customer')) { setInit({ customer: u.get('customer')!, booklet: u.get('booklet') || undefined, repeat: u.get('repeat') === '1', product: u.get('product') || undefined, qty: u.get('qty') || undefined, batch: u.get('batch') || undefined }); setAdding(true); window.history.replaceState(null, '', '/orders'); } }, [canCreate]);
   const load = useCallback(() => call(`/api/orders?box=${box}${filterQuery(flt)}`).then(r => { setRows(r.orders); setErr(''); }).catch(e => setErr(e.message)), [box, flt]);
   useEffect(() => { setRows(null); setOpen(null); load(); }, [load]);
   return (

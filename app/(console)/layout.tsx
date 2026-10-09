@@ -33,6 +33,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'booklets.create') || can(s, 'booklets.approve') || can(s, 'sales.view')) sales.push({ href: '/booklets', label: 'Booklets' });
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/orders', label: 'Sales orders' });
   if (can(s, 'credit.manage') || can(s, 'dispatch.manage')) sales.push({ href: '/credit', label: 'Credit control' });
+  if (can(s, 'inventory.view')) sales.push({ href: '/expiry', label: 'Stock and expiry' });
   if (can(s, 'tenders.view')) sales.push({ href: '/m/tenders', label: 'Tenders' });
   const money = Object.values(REQ).filter(d => can(s, d.create) || d.steps.some(st => can(s, st.perm)) || (!!d.view && can(s, d.view))).map(d => ({ href: `/r/${d.key}`, label: d.label }));
   if (can(s, 'stock.report') || can(s, 'stock.view')) money.push({ href: '/stock', label: 'Distributor stock' });
@@ -57,6 +58,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/reports': ['Reports', 'Excel downloads for monitoring, sales, money and people'],
     '/customers': ['Customer', 'Everything about one customer in one place'],
     '/opportunities': ['Sales opportunities', 'Approved rates not yet ordered, customers who stopped ordering, distributors running low'],
+    '/expiry': ['Stock and expiry', 'Which batches will not sell before they expire, who can use them in time, and at what offer'],
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],

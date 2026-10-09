@@ -162,6 +162,16 @@ export async function runAlerts(force = false) {
        from financial_instruments f join customers c on c.id=f.customer_id left join customer_assignments ca on ca.customer_id=c.id and ca.to_date is null
       where f.status='Active' and f.expiry_date <= ${TODAY} + $1::int on conflict(key) do nothing`, [Math.max(1, Math.round(Number(rules.instrument_expiry.threshold) || 30))]);
 
+  // Once a week: how much company stock will not sell before it expires. Goes to the General Managers.
+  if (rules.expiry_risk?.enabled) {
+    const { expiryPosition } = await import('./inventory'); const pos = await expiryPosition();
+    if (pos.at_risk_boxes > 0) {
+      const msg = `${pos.at_risk_boxes} boxes of company stock (Rs ${Math.round(pos.at_risk_value).toLocaleString('en-IN')} at trade rate) will not sell before expiry at the current rate of sale. Open Stock and expiry to find buyers.`;
+      const made = await q<any>(`insert into alerts(rule,severity,message,day,key) values('expiry_risk','warn',$1,${TODAY},'expiry_risk:'||to_char(${NPT},'IYYY-IW')) on conflict(key) do nothing returning id`, [msg]);
+      if (made.length) await notify((await q<any>(`select u.id from users u join roles r on r.id=u.role_id where u.active and r.key='gm'`)).map(g => g.id), 'Stock at risk of expiry', msg, '/expiry');
+    }
+  }
+
   // One summary per person per week, not one alert per customer.
   if (rules.coverage?.enabled) await q(
     `insert into alerts(rule,severity,user_id,message,day,key)
@@ -175,7 +185,7 @@ export async function runAlerts(force = false) {
 
 export async function listAlerts(s: Session, open: boolean) {
   await runAlerts();
-  const params: any[] = []; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait','approval_escalation')` : teamScope(s, params);
+  const params: any[] = []; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait','approval_escalation','expiry_risk')` : teamScope(s, params);
   return q<any>(
     `select a.id,a.rule,a.severity,a.message,a.day,a.at,a.ack_at,u.name as person,u.code as person_code,ar.name as area,k.name as ack_by
        from alerts a left join users u on u.id=a.user_id left join areas ar on ar.id=u.area_id left join users k on k.id=a.ack_by
@@ -184,7 +194,7 @@ export async function listAlerts(s: Session, open: boolean) {
 }
 
 export async function ackAlert(s: Session, id: number) {
-  const params: any[] = [id]; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait','approval_escalation')` : teamScope(s, params);
+  const params: any[] = [id]; const scope = s.role === 'cc' ? ` and a.rule in ('instrument_expiry','approval_wait','approval_escalation','expiry_risk')` : teamScope(s, params);
   const ok = await q1<any>(`select a.id from alerts a left join users u on u.id=a.user_id where a.id=$1 and a.ack_at is null${scope}`, params);
   if (!ok) throw new HttpError(404, 'This alert is already acknowledged or is outside your team.');
   await q('update alerts set ack_by=$1, ack_at=now() where id=$2', [s.id, id]);

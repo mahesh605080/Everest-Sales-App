@@ -8,6 +8,7 @@ import { can, Session } from './perm';
 import { REQ, ReqDef, RField } from './reqdefs';
 import { managerOf, notify, withPerm } from './notify';
 import { filterSql, ListFilter } from './filters';
+import { nonReturnableSale } from './inventory';
 
 export function reqDef(key: string): ReqDef {
   const d = REQ[key]; if (!d) throw new HttpError(404, 'Unknown list.'); return d;
@@ -43,7 +44,13 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
   }
   if (def.key === 'samples') { if (v.kind === 'Sample' ? !v.product_id : !v.item) throw new HttpError(422, v.kind === 'Sample' ? 'Choose the product that was sampled.' : 'Say what item was given.'); v.day = today; }
   if (def.key === 'competitor') v.day = today;
-  if (def.key === 'claims') { if (v.amount <= 0) throw new HttpError(422, 'Claim amount must be more than zero.'); v.day = today; }
+  if (def.key === 'claims') {
+    if (v.amount <= 0) throw new HttpError(422, 'Claim amount must be more than zero.'); v.day = today;
+    if (v.batch_no && ['Expired stock', 'Near expiry'].includes(v.type)) {
+      const sale = await nonReturnableSale(v.customer_id, v.batch_no);
+      if (sale) throw new HttpError(422, `Batch ${v.batch_no} was sold to this customer on ${sale.no} as a non-returnable near-expiry lot, so an expiry claim cannot be raised for it.`);
+    }
+  }
   const keys = Object.keys(v);
   const row = await q1<any>(`insert into ${def.table}(user_id,${keys.map(k => `"${k}"`).join(',')}) values($1,${keys.map((_, i) => '$' + (i + 2)).join(',')}) returning id`, [s.id, ...keys.map(k => v[k])]);
   await q('insert into approvals(doc_type,doc_id,user_id,user_name,action) values($1,$2,$3,$4,$5)', [def.key, row!.id, s.id, s.name, def.steps.length ? 'Submitted' : 'Recorded']);

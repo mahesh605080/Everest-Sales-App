@@ -7,14 +7,14 @@ import { pool, q, q1 } from '../lib/db';
 import { ALL_PERMS } from '../lib/perm';
 
 const views = ALL_PERMS.filter(p => p.endsWith('.view'));
-const mgr = ['tenders.edit', 'reports.run', 'scorecard.view', 'samples.view', 'competitor.view'];
+const mgr = ['inventory.view', 'tenders.edit', 'reports.run', 'scorecard.view', 'samples.view', 'competitor.view'];
 const ROLES: [string, string, number, string[]][] = [
   ['admin', 'Admin', 5, ALL_PERMS],
-  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage', 'booklets.approve', ...mgr, 'claims.approve', 'targets.manage']],
-  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run', 'sales.view', 'credit.manage', 'dispatch.manage', 'alerts.view', 'collections.verify', 'claims.settle', 'stock.view', 'tenders.view', 'reports.run']],
+  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage', 'booklets.approve', ...mgr, 'claims.approve', 'targets.manage', 'inventory.manage']],
+  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run', 'sales.view', 'credit.manage', 'dispatch.manage', 'alerts.view', 'collections.verify', 'claims.settle', 'stock.view', 'tenders.view', 'reports.run', 'inventory.view', 'inventory.manage']],
   ['rsm', 'Regional Sales Manager', 3, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'regions.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.approve', 'booklets.approve', 'sales.view', ...mgr, 'claims.approve', 'stock.view', 'tenders.view']],
   ['asm', 'Area Sales Manager', 2, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.use', 'plan.approve', 'booklets.create', 'booklets.approve', 'orders.create', 'sales.view', ...mgr, 'collections.create', 'claims.create', 'stock.report', 'stock.view', 'tenders.view', 'samples.create', 'competitor.create']],
-  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use', 'plan.use', 'booklets.create', 'orders.create', 'collections.create', 'claims.create', 'stock.report', 'tenders.view', 'samples.create', 'competitor.create']],
+  ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use', 'plan.use', 'booklets.create', 'orders.create', 'collections.create', 'claims.create', 'stock.report', 'tenders.view', 'samples.create', 'competitor.create', 'inventory.view']],
 ];
 const SETTINGS: [string, string, string, string][] = [
   ['geo_fence_radius_m', '200', 'Geo-fence radius for a valid customer visit', 'metres'],
@@ -28,6 +28,9 @@ const SETTINGS: [string, string, string, string][] = [
   ['visits_per_day_norm', '4', 'Visits expected per working day when there is no tour plan', 'visits'],
   ['no_order_days', '30', 'Customer counts as "not ordering" after', 'days'],
   ['reorder_cover_days', '15', 'Suggest a reorder when distributor stock covers fewer than', 'days'],
+  ['near_expiry_months', '6', 'Stock counts as near-expiry when it expires within', 'months'],
+  ['min_shelf_life_months', '2', 'Never sell stock with less remaining shelf life than', 'months'],
+  ['max_cover_months', '3', 'A distributor should not hold more than this many months of sale', 'months'],
   ['dda_expiry_warning_days', '60', 'Warn before a customer\'s DDA licence expires', 'days'],
 ];
 
