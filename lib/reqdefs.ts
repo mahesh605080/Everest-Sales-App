@@ -1,7 +1,7 @@
 /** The four "request" documents share one engine: a field user creates it, someone decides, sometimes someone closes it. */
 export type RField = { key: string; label: string; type: 'text' | 'money' | 'int' | 'km' | 'date' | 'select' | 'customer' | 'product' | 'photo'; required?: boolean; options?: string[]; help?: string; wide?: boolean };
 export type Step = { from: string; to: string; perm: string; label: string; scope: 'team' | 'all'; done: string };
-export type ReqDef = { key: string; table: string; label: string; one: string; create: string; intro: string; fields: RField[]; steps: Step[]; show: string[] };
+export type ReqDef = { key: string; table: string; label: string; one: string; create: string; view?: string; intro: string; fields: RField[]; steps: Step[]; show: string[] };
 
 export const REQ: Record<string, ReqDef> = {
   collections: {
@@ -55,6 +55,35 @@ export const REQ: Record<string, ReqDef> = {
     steps: [{ from: 'Submitted', to: 'Approved', perm: 'claims.approve', label: 'Approve', scope: 'team', done: 'Claim approved.' },
       { from: 'Approved', to: 'Settled', perm: 'claims.settle', label: 'Mark settled', scope: 'all', done: 'Claim settled.' }],
     show: ['type', 'product', 'qty', 'batch_no', 'expiry_date'],
+  },
+  samples: {
+    key: 'samples', table: 'samples', label: 'Samples and gifts', one: 'sample entry', create: 'samples.create', view: 'samples.view',
+    intro: 'What was handed out, to whom and at which customer. There is no approval step; managers see the log.',
+    fields: [
+      { key: 'customer_id', label: 'Customer', type: 'customer', required: true },
+      { key: 'kind', label: 'What was given', type: 'select', options: ['Sample', 'Gift', 'Promotional material'], required: true },
+      { key: 'product_id', label: 'Product (for a sample)', type: 'product' },
+      { key: 'item', label: 'Item (for a gift or material)', type: 'text' },
+      { key: 'qty', label: 'Quantity (units)', type: 'int', required: true },
+      { key: 'given_to', label: 'Given to', type: 'text', required: true, help: 'Name and role, for example Dr. Sharma, purchase officer' },
+      { key: 'remarks', label: 'Remarks', type: 'text', wide: true },
+    ],
+    steps: [], show: ['kind', 'product', 'item', 'qty', 'given_to'],
+  },
+  competitor: {
+    key: 'competitor', table: 'competitor_info', label: 'Competitor information', one: 'competitor note', create: 'competitor.create', view: 'competitor.view',
+    intro: 'Competitor rates and schemes seen in the market, with a photo where possible.',
+    fields: [
+      { key: 'customer_id', label: 'Seen at customer', type: 'customer' },
+      { key: 'competitor', label: 'Competitor company', type: 'text', required: true },
+      { key: 'their_product', label: 'Their product', type: 'text', required: true },
+      { key: 'product_id', label: 'Our matching product', type: 'product' },
+      { key: 'their_rate', label: 'Their rate (Rs per unit)', type: 'money' },
+      { key: 'scheme', label: 'Their scheme', type: 'text', help: 'For example 10 + 2, or 5% cash discount' },
+      { key: 'photo_id', label: 'Photo', type: 'photo' },
+      { key: 'remarks', label: 'Remarks', type: 'text', wide: true },
+    ],
+    steps: [], show: ['competitor', 'their_product', 'product', 'their_rate', 'scheme'],
   },
   leave: {
     key: 'leave', table: 'leaves', label: 'Leave', one: 'leave request', create: 'leave.apply',

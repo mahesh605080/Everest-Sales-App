@@ -29,7 +29,7 @@ export function BookletDetail({ id, onDone }: { id: number; onDone: () => void }
   );
 }
 
-function NewBooklet({ onDone }: { onDone: () => void }) {
+function NewBooklet({ onDone, fromId }: { onDone: () => void; fromId?: number | null }) {
   const [custs, setCusts] = useState<any[]>([]); const [prods, setProds] = useState<any[]>([]); const [bands, setBands] = useState({ a: 2, r: 5 });
   const [cust, setCust] = useState(''); const [credit, setCredit] = useState<any>(null); const [due, setDue] = useState(new Date(Date.parse(nptToday()) + 7 * 864e5).toISOString().slice(0, 10));
   const [remarks, setRemarks] = useState(''); const [lines, setLines] = useState([blank()]); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
@@ -38,6 +38,9 @@ function NewBooklet({ onDone }: { onDone: () => void }) {
     call('/api/m/products?size=500').then(r => setProds(r.rows)).catch(() => {});
     call('/api/settings').then(r => { const g = (k: string, d: number) => Number(r.settings.find((x: any) => x.key === k)?.value ?? d); setBands({ a: g('booklet_asm_band_pct', 2), r: g('booklet_rsm_band_pct', 5) }); }).catch(() => {});
   }, []);
+  // Revising a sent-back booklet starts from its lines; submitting makes a new booklet number.
+  useEffect(() => { if (!fromId) return; call(`/api/booklets/${fromId}`).then(r => { setCust(String(r.booklet.customer_id)); setRemarks(r.booklet.remarks || '');
+    setLines(r.items.map((i: any) => ({ product_id: String(i.product_id), qty: String(i.qty), ask_rate: String(i.ask_rate), bonus_buy: i.bonus_buy ? String(i.bonus_buy) : '', bonus_free: i.bonus_free ? String(i.bonus_free) : '', discount_pct: i.discount_pct ? String(i.discount_pct) : '', remarks: i.remarks || '' }))); }).catch(e => setErr(e.message)); }, [fromId]);
   useEffect(() => { setCredit(null); if (cust) call(`/api/credit?customer=${cust}`).then(r => setCredit(r.credit)).catch(() => {}); }, [cust]);
   const P = useMemo(() => new Map(prods.map(p => [String(p.id), p])), [prods]);
   const set = (i: number, k: string, v: string) => setLines(ls => ls.map((l, j) => j !== i ? l : { ...l, [k]: v, ...(k === 'product_id' ? { ask_rate: String(P.get(v)?.trade_rate ?? '') } : {}) }));
@@ -51,7 +54,7 @@ function NewBooklet({ onDone }: { onDone: () => void }) {
   }
   return (
     <form className="card" onSubmit={submit}>
-      <h2>New booklet</h2>
+      <h2>{fromId ? 'Revise booklet' : 'New booklet'}</h2>
       <div className="form"><div className="fld"><label htmlFor="bk-cust">Customer *</label><select id="bk-cust" value={cust} onChange={e => setCust(e.target.value)}><option value="">Select…</option>{custs.map(c => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}</select></div>
         <div className="fld"><label htmlFor="bk-due">Valid to *</label><input id="bk-due" type="date" min={nptToday()} value={due} onChange={e => setDue(e.target.value)} /></div>
         <div className="fld wide"><label htmlFor="bk-rem">Remarks</label><input id="bk-rem" type="text" value={remarks} onChange={e => setRemarks(e.target.value)} /></div></div>
@@ -76,7 +79,7 @@ function NewBooklet({ onDone }: { onDone: () => void }) {
 
 export default function Booklets({ canCreate, canApprove, canAll }: { canCreate: boolean; canApprove: boolean; canAll: boolean }) {
   const boxes = [canApprove && ['inbox', 'To approve'], canCreate && ['mine', 'My booklets'], canAll && ['all', 'All']].filter(Boolean) as string[][];
-  const [box, setBox] = useState(boxes[0]?.[0] || 'mine'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<number | null>(null); const [adding, setAdding] = useState(false);
+  const [box, setBox] = useState(boxes[0]?.[0] || 'mine'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<number | null>(null); const [adding, setAdding] = useState(false); const [revise, setRevise] = useState<number | null>(null);
   const load = useCallback(() => call(`/api/booklets?box=${box}`).then(r => { setRows(r.booklets); setErr(''); }).catch(e => setErr(e.message)), [box]);
   useEffect(() => { setRows(null); setOpen(null); load(); }, [load]);
   return (
@@ -84,11 +87,11 @@ export default function Booklets({ canCreate, canApprove, canAll }: { canCreate:
       <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => setBox(b[0])}>{b[1]}</button>)}</div>
         <div className="r">{canCreate && !adding && <button className="btn primary" onClick={() => setAdding(true)}>New booklet</button>}</div></div>
         <p className="sub">A booklet asks for a rate or scheme below the trade rate for one customer. How far it travels depends on how far below the base rate it is.</p></section>
-      {adding && <NewBooklet onDone={() => { setAdding(false); setBox('mine'); load(); }} />}
+      {adding && <NewBooklet key={revise ?? 'new'} fromId={revise} onDone={() => { setAdding(false); setRevise(null); setBox('mine'); load(); }} />}
       {err && <div className="errbox" role="alert">{err}</div>}
       {(rows || []).map(b => <section className="card" key={b.id}>
         <div className="hd"><div><h2>{b.customer}</h2><span className="code">{b.no} · {b.person} · ordered {b.order_date} · valid to {b.due_date}</span></div>
-          <div className="toolbar">{b.status === 'Pending' && <span className="pill info">With {b.level.toUpperCase()} · final {b.final_level.toUpperCase()}</span>}<VarPill v={b.max_variance} /><Status s={b.status} />
+          <div className="toolbar">{b.status === 'Pending' && <span className="pill info">With {b.level.toUpperCase()} · final {b.final_level.toUpperCase()}</span>}<VarPill v={b.max_variance} /><Status s={b.status} />{canCreate && box === 'mine' && b.status === 'Sent back' && <button className="btn sm primary" onClick={() => { setRevise(b.id); setAdding(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Revise</button>}
             <button className="btn sm" onClick={() => setOpen(open === b.id ? null : b.id)}>{open === b.id ? 'Close' : 'Open'}</button></div></div>
         {open === b.id && <BookletDetail id={b.id} onDone={() => { setOpen(null); load(); }} />}</section>)}
       {rows && !rows.length && <section className="card"><p className="sub">{box === 'inbox' ? 'Nothing is waiting for your approval.' : 'No booklets here yet.'}</p></section>}

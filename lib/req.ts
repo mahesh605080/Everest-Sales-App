@@ -47,6 +47,8 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
     if (v.mode === 'Cheque' && (!v.ref_no || !v.cheque_date)) throw new HttpError(422, 'A cheque needs its number and date.');
     v.day = today;
   }
+  if (def.key === 'samples') { if (v.kind === 'Sample' ? !v.product_id : !v.item) throw new HttpError(422, v.kind === 'Sample' ? 'Choose the product that was sampled.' : 'Say what item was given.'); v.day = today; }
+  if (def.key === 'competitor') v.day = today;
   if (def.key === 'claims') { if (v.amount <= 0) throw new HttpError(422, 'Claim amount must be more than zero.'); v.day = today; }
   if (def.key === 'expenses') {
     if (v.day > today) throw new HttpError(422, 'The travel date cannot be in the future.');
@@ -72,7 +74,7 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
   }
   const keys = Object.keys(v);
   const row = await q1<any>(`insert into ${def.table}(user_id,${keys.map(k => `"${k}"`).join(',')}) values($1,${keys.map((_, i) => '$' + (i + 2)).join(',')}) returning id`, [s.id, ...keys.map(k => v[k])]);
-  await q('insert into approvals(doc_type,doc_id,user_id,user_name,action) values($1,$2,$3,$4,$5)', [def.key, row!.id, s.id, s.name, 'Submitted']);
+  await q('insert into approvals(doc_type,doc_id,user_id,user_name,action) values($1,$2,$3,$4,$5)', [def.key, row!.id, s.id, s.name, def.steps.length ? 'Submitted' : 'Recorded']);
   if (alert && (await q1<any>(`select enabled from alert_rules where key='expense_gps'`))?.enabled)
     await q(`insert into alerts(rule,severity,user_id,message,day,key) values('expense_gps','warn',$1,$2,${TODAY},$3) on conflict(key) do nothing`, [s.id, alert, `expense_gps:${row!.id}`]);
   await audit(s, 'create', def.key, row!.id, null, v, ip);
@@ -91,11 +93,11 @@ export async function listReq(def: ReqDef, s: Session, box: string) {
   if (box === 'mine') { p.push(s.id); w = 't.user_id=$1'; }
   else {
     const steps = mySteps(def, s);
-    if (!steps.length) throw new HttpError(403, 'Your role does not allow this.');
+    if (!steps.length && !(def.view && can(s, def.view))) throw new HttpError(403, 'Your role does not allow this.');
     const all = steps.some(st => st.scope === 'all');
     if (box === 'inbox') {
       const parts = steps.map(st => { p.push(st.from); return `(t.status=$${p.length}${st.scope === 'team' ? ` and t.user_id <> ${s.id}` + teamScope(s, p) : ''})`; });
-      w = '(' + parts.join(' or ') + ')';
+      w = parts.length ? '(' + parts.join(' or ') + ')' : 'false';
     } else w = 'true' + (all ? '' : teamScope(s, p));
   }
   const rows = await q<any>(`${selectSql(def)} where ${w} order by t.created_at desc limit 300`, p);

@@ -29,7 +29,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/orders', label: 'Sales orders' });
   if (can(s, 'credit.manage') || can(s, 'dispatch.manage')) sales.push({ href: '/credit', label: 'Credit control' });
   if (can(s, 'tenders.view')) sales.push({ href: '/m/tenders', label: 'Tenders' });
-  const money = Object.values(REQ).filter(d => can(s, d.create) || d.steps.some(st => can(s, st.perm))).map(d => ({ href: `/r/${d.key}`, label: d.label }));
+  const money = Object.values(REQ).filter(d => can(s, d.create) || d.steps.some(st => can(s, st.perm)) || (!!d.view && can(s, d.view))).map(d => ({ href: `/r/${d.key}`, label: d.label }));
   if (can(s, 'stock.report') || can(s, 'stock.view')) money.push({ href: '/stock', label: 'Distributor stock' });
   const perf = [] as { href: string; label: string }[];
   if (can(s, 'scorecard.view') || can(s, 'targets.manage')) perf.push({ href: '/scorecard', label: 'Targets and scorecard' });

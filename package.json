@@ -8,7 +8,8 @@
     "start": "next start",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
-    "setup": "npm run migrate && npm run seed"
+    "setup": "npm run migrate && npm run seed",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

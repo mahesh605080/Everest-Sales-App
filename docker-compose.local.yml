@@ -1,0 +1,22 @@
+# Run the whole system on your own computer, free, for testing:
+#   docker compose -f docker-compose.local.yml up --build
+# then open http://localhost:3000  (login ADMIN / Everest@123)
+# Data stays in a Docker volume on this computer. To wipe it: docker compose -f docker-compose.local.yml down -v
+services:
+  db:
+    image: postgres:16
+    environment: { POSTGRES_USER: sfa, POSTGRES_PASSWORD: sfa-local, POSTGRES_DB: sfa, TZ: Asia/Kathmandu, PGTZ: Asia/Kathmandu }
+    volumes: [localdb:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U sfa -d sfa"], interval: 5s, retries: 20 }
+  app:
+    build: .
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["3000:3000"]
+    environment:
+      DATABASE_URL: postgresql://sfa:sfa-local@db:5432/sfa
+      AUTH_SECRET: local-testing-only-secret-0123456789
+      DEFAULT_USER_PASSWORD: Everest@123
+      COOKIE_SECURE: "false"
+      TZ: Asia/Kathmandu
+    command: ["sh", "-c", "npm run migrate && npm run seed -- --sample && npm start"]
+volumes: { localdb: {} }

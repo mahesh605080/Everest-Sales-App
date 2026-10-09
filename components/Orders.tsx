@@ -24,6 +24,7 @@ export function OrderDetail({ id, onDone }: { id: number; onDone: () => void }) 
         <div className="r"><button className="btn primary" disabled={busy} onClick={() => act('approve')}>Approve</button><button className="btn danger" disabled={busy} onClick={() => act('reject')}>Reject</button></div></div>}
       {d.canDispatch && <div className="toolbar"><div className="l"><div className="fld"><label htmlFor={`od-inv-${id}`}>Invoice number (optional)</label><input id={`od-inv-${id}`} type="text" value={inv} onChange={e => setInv(e.target.value)} /></div></div>
         <div className="r"><button className="btn primary" disabled={busy} onClick={() => act('dispatch')}>Mark dispatched</button></div></div>}
+      <div><a className="btn sm" href={`/print/order/${id}`} target="_blank" rel="noreferrer">Print or save as PDF</a></div>
       {d.canWithdraw && <div><button className="btn" disabled={busy} onClick={() => act('withdraw')}>Withdraw order</button></div>}
       <Trail rows={d.trail} />
     </div>

@@ -82,7 +82,19 @@ GPS distance for an expense day uses the location points the app recorded that d
 
 Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, discipline 15. "Approved sales" counts orders approved by Credit Control in the month, by the date of approval.
 
-Not built yet: the Android/iOS app (background tracking, mock-location detection, push), sample and gift issue, competitor information, a printable order PDF, SMS notifications, BS dates.
+## Later additions
+
+| Area | What works now |
+| --- | --- |
+| Samples and gifts | Field user logs what was given, to whom, at which customer; managers see the team's log |
+| Competitor information | Competitor, product, rate, scheme and a photo; managers see the team's notes |
+| Order print | "Print or save as PDF" on every sales order opens a clean page for the browser's print dialog |
+| Revise a booklet | A sent-back booklet has a Revise button that reopens it with its lines filled in; submitting creates a new booklet number |
+| Scheduled alerts | `GET /api/cron/alerts?key=CRON_SECRET` runs the rules without anyone logged in. Point any scheduler at it every 5 minutes |
+| Smoke test | `npm run smoke` runs 57 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
+| Free local testing | `docker-compose.local.yml` and `LOCAL-TESTING.md` run everything on one computer with sample data |
+
+Not built yet: the Android/iOS app (background tracking, mock-location detection, push), SMS notifications, BS dates.
 
 ## Run it on your own computer (for a developer)
 
