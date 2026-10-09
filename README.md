@@ -26,6 +26,7 @@ Attendance, leave and expense claims are deliberately not part of this app.
 | Stock and expiry | Batch-wise company stock by Excel upload. Expiry ladder, stock that will not sell in time at the current rate, offer slabs for near-expiry lots, "Find buyers" who can use a batch before it expires |
 | Near-expiry lot orders | Sold at the offer rate, limited to the batch, marked non-returnable; a later expiry claim on that batch is refused |
 | Earliest expiry first | Every order shows which batches to send. Dispatch records the batches that left, takes them out of the company stock, and makes later return claims traceable to the batch |
+| Demand plan | Per product: monthly sale, trend, open orders, sellable stock, days of cover and how many boxes to make to hold 60 days of sale |
 | Running out | Products whose sellable stock covers fewer than 30 days of sale |
 | Short stock | When open orders exceed sellable stock: a fair share per order based on what each customer normally buys |
 | Loss and returns | Expired in the godown, expiry returns by month, by customer and product, and what near-expiry selling recovered |
@@ -75,7 +76,7 @@ These defaults were chosen while building; set them to the company's own policy 
 
 ## Checks
 
-`npm run smoke` runs 149 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
+`npm run smoke` runs 151 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
 
 ## Run it on your own computer (for a developer)
 
@@ -88,6 +89,8 @@ npm run migrate               # creates the tables
 npm run seed -- --sample      # roles, settings, admin + example data (leave out --sample for an empty system)
 npm run dev                   # http://localhost:3000
 ```
+
+To see every screen filled with realistic figures on a test database, also run `npm run demo` after the sample seed: it adds six months of orders, batch-wise stock, distributor stock reports, outstanding, visits, claims, rebate slabs and targets, all marked DEMO.
 
 Log in as `ADMIN` with the password from `DEFAULT_USER_PASSWORD` (default `Everest@123`). You are asked to change it.
 With `--sample`, the users `GM01`, `CC01`, `RSM01`, `ASM01`, `SO01` … use the same default password. Every sample record has "Sample" in its name; deactivate or overwrite them before going live.

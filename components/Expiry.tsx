@@ -52,7 +52,7 @@ function Position({ canOrder }: { canOrder: boolean }) {
           <td>{b.offer ? <><span className="pill good">{b.offer.text}</span><br /><span className="code">Rs {b.offer.rate.toFixed(2)} vs {b.trade_rate.toFixed(2)}</span></> : b.expired ? <span className="pill crit">Cannot be sold</span> : b.unsellable ? <span className="pill crit">Below {d.min_shelf} months</span> : <span className="code">standard rate</span>}</td>
           <td>{!b.expired && !b.unsellable && <button className="btn sm primary" onClick={() => { setSel(b.id); window.scrollTo({ top: 300, behavior: 'smooth' }); }}>Find buyers</button>}</td></tr>)}
           {!rows.length && <tr><td colSpan={9}><p className="sub" style={{ padding: '10px 0' }}>{only === 'risk' ? 'At today’s rate of sale every batch will sell before it gets too close to expiry.' : 'No batch matches this view.'}</p></td></tr>}</tbody></table></div>
-      <p className="sub">"Left over" walks each product's batches in expiry order: what the monthly sale of the last 90 days can clear before the batch reaches the minimum shelf life ({d.min_shelf} months), and what remains. Free boxes are the uploaded quantity minus near-expiry orders taken since the upload.</p></section>
+      <p className="sub">"Left over" walks each product's batches in expiry order: what the monthly sale of the last 90 days can clear before the batch reaches the minimum shelf life ({d.min_shelf} months), and what remains. Free boxes are what is in the godown (the last upload, less dispatches since) minus near-expiry lot orders not yet dispatched.</p></section>
   </>;
 }
 
@@ -144,8 +144,32 @@ function Short() {
     <section className="card"><p className="sub">The share follows what each customer normally buys (average of the last 90 days of dispatches), never more than it ordered. A customer with no history gets a small share of what it asked for. This is a guide for dispatch; it does not change any order.</p></section></>;
 }
 
+function Plan() {
+  const [d, setD] = useState<any>(null); const [err, setErr] = useState('');
+  useEffect(() => { call('/api/expiry?plan=1').then(setD).catch(e => setErr(e.message)); }, []);
+  if (err) return <div className="errbox" role="alert">{err}</div>;
+  if (!d) return <section className="card"><p className="sub">Working out the demand…</p></section>;
+  const make = d.rows.filter((r: any) => r.make > 0);
+  return <>
+    <div className="g kpi">
+      <div className="card"><div className="lab">Products to make</div><div className="big">{make.length}</div><div className="ctx">to hold {d.target_days} days of sale</div></div>
+      <div className="card"><div className="lab">Value to make</div><div className="big">{sh(d.make_value)}</div><div className="ctx">at trade rate</div></div>
+      <div className="card"><div className="lab">Growing fast</div><div className="big">{d.rows.filter((r: any) => r.trend_pct > 20).length}</div><div className="ctx">last 30 days over 20% above before</div></div>
+    </div>
+    <section className="card"><div className="hd"><div><h2>Demand plan</h2><span className="sub">lowest cover first · stock as of {d.as_of || 'no upload yet'} · stock that will expire unsold is not counted as cover</span></div><a className="btn sm" href="/api/reports/demand-plan">Excel</a></div>
+      <div className="tbl"><table><thead><tr><th>Product</th><th className="r">Sells / month</th><th>Trend</th><th className="r">Open orders</th><th className="r">Sellable stock</th><th>Cover</th><th className="r">Make</th></tr></thead>
+        <tbody>{d.rows.map((r: any) => <tr key={r.id}><td><b>{r.product}</b><br /><span className="code">{r.code} · {r.pack_size || ''}</span></td><td className="r num">{r.per_month}</td>
+          <td>{r.trend_pct == null ? <span className="code">–</span> : <span className={`pill ${r.trend_pct > 20 ? 'good' : r.trend_pct < -20 ? 'crit' : ''}`}>{r.trend_pct > 0 ? '+' : ''}{r.trend_pct}%</span>}</td>
+          <td className="r num">{r.open || '–'}</td><td className="r num">{r.stock ?? <span className="code">no figure</span>}{r.at_risk > 0 && <><br /><span className="code">{r.at_risk} will expire</span></>}</td>
+          <td>{r.cover_days == null ? <span className="code">–</span> : <span className={`pill ${r.cover_days < 15 ? 'crit' : r.cover_days < 30 ? 'warn' : 'good'}`}>{r.cover_days < 0 ? 'short now' : `${r.cover_days} days`}</span>}</td>
+          <td className="r">{r.make == null ? <span className="code">upload stock</span> : r.make > 0 ? <><b className="num">{r.make}</b> boxes<br /><span className="code">{rs(r.make_value)}</span></> : <span className="code">enough</span>}</td></tr>)}
+          {!d.rows.length && <tr><td colSpan={7}><p className="sub" style={{ padding: '12px 0' }}>No sales or stock yet.</p></td></tr>}</tbody></table></div>
+      <p className="sub">"Sells" is approved orders of the last 90 days per month, free scheme boxes included. A product growing more than 20% is planned on its last 30 days. Make = sale for {d.target_days} days + open orders − usable stock.</p></section>
+  </>;
+}
+
 export default function Expiry({ canManage, canOrder, canLoss }: { canManage: boolean; canOrder: boolean; canLoss: boolean }) {
-  const tabs = [['pos', 'Expiry position'], ['slabs', 'Offer slabs'], canLoss && ['loss', 'Loss and returns'], canManage && ['short', 'Short stock'], canManage && ['upload', 'Upload stock']].filter(Boolean) as string[][];
+  const tabs = [['pos', 'Expiry position'], ['slabs', 'Offer slabs'], canLoss && ['loss', 'Loss and returns'], canManage && ['short', 'Short stock'], (canManage || canLoss) && ['plan', 'Demand plan'], canManage && ['upload', 'Upload stock']].filter(Boolean) as string[][];
   const [tab, setTab] = useState('pos'); const [n, setN] = useState(0);
   return <>
     <section className="card"><div className="toolbar"><div className="l">{tabs.map(t => <button key={t[0]} className={`btn ${tab === t[0] ? 'primary' : ''}`} onClick={() => setTab(t[0])}>{t[1]}</button>)}</div></div></section>
@@ -153,6 +177,7 @@ export default function Expiry({ canManage, canOrder, canLoss }: { canManage: bo
     {tab === 'slabs' && <Slabs canManage={canManage} />}
     {tab === 'loss' && <Loss />}
     {tab === 'short' && <Short />}
+    {tab === 'plan' && <Plan />}
     {tab === 'upload' && <Upload onDone={() => setN(x => x + 1)} />}
   </>;
 }

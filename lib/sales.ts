@@ -9,7 +9,7 @@ import { can, Session } from './perm';
 import { fyLabel } from './bs';
 import { notify, roleInTerritory, withPerm } from './notify';
 import { filterSql, ListFilter } from './filters';
-import { batchOffer, dispatched, fefoForOrder, recordDispatch } from './inventory';
+import { batchOffer, dispatched, fefoForOrder, recordDispatch, touchStock } from './inventory';
 import { bestScheme, pricesFor, schemesFor } from './pricing';
 
 export { fyLabel };
@@ -324,6 +324,7 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
     return { id: o.id as number, no, value, over_limit: over, dda_expired: credit.dda_expired as boolean, customer: cust.name as string };
   }
   });
+  touchStock();
   await audit(s, 'create', 'sales_orders', out.id, null, { no: out.no, customer: out.customer, value: out.value, over_limit: out.over_limit }, ip);
   await notify(await withPerm('credit.manage'), `Sales order ${out.no} is waiting${out.over_limit ? ' (over limit)' : ''}`, `${s.name} · ${out.customer} · Rs ${Math.round(out.value).toLocaleString('en-IN')}`, '/credit');
   return out;
@@ -360,6 +361,7 @@ export async function actOrder(s: Session, id: number, b: any, ip: string | null
     await q('update sales_orders set invoice_no=$1, dispatched_by=$2, dispatched_at=now() where id=$3', [String(b.invoice_no || '').trim().slice(0, 40) || null, s.id, id]);
   } else throw new HttpError(422, 'Unknown action.');
   await q('update sales_orders set status=$1, updated_at=now() where id=$2', [status, id]);
+  touchStock();
   await trail('order', id, s, null, action, remarks || (b.invoice_no ? `Invoice ${b.invoice_no}` : ''));
   if (o.user_id !== s.id) await notify([o.user_id], `Sales order ${o.no}: ${action.toLowerCase()}`, `${o.customer}${remarks ? ' · ' + remarks : ''}`, '/orders');
   if (status === 'Approved') await notify(await withPerm('dispatch.manage'), `Sales order ${o.no} is ready for dispatch`, o.customer, '/credit');

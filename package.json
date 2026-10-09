@@ -9,6 +9,7 @@
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
     "setup": "npm run migrate && npm run seed",
+    "demo": "tsx scripts/demo.ts",
     "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {

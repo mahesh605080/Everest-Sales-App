@@ -52,6 +52,7 @@ export async function importStock(s: Session, file: File, asOf: string, mode: st
   // A clean full file is the whole stock: any batch that is not in it has been sold out.
   let zeroed = 0;
   if (mode === 'full' && !errors.length) zeroed = (await q('update stock_batches set qty_boxes=0, as_of=$1, upload_id=$2, updated_at=now() where upload_id <> $2 and qty_boxes > 0 returning id', [asOf, up])).length;
+  touchStock();
   await audit(s, 'stock-upload', 'stock_batches', up, null, { as_of: asOf, file: file.name, mode, updated: good.length, skipped: errors.length, set_to_zero: zeroed }, ip);
   return { updated: good.length, failed: errors.length, zeroed, held: mode === 'full' && errors.length > 0, errors: errors.slice(0, 200) };
 }
@@ -78,6 +79,7 @@ export async function saveSlabs(s: Session, rows: any[], ip: string | null) {
   const before = await offerSlabs();
   await q('update expiry_offers set active=false where active');
   for (const r of clean) await q('insert into expiry_offers(months_from,months_to,discount_pct,bonus_buy,bonus_free) values($1,$2,$3,$4,$5)', [r.from, r.to, r.disc, r.buy, r.free]);
+  touchStock();
   await audit(s, 'update', 'expiry_offers', null, { slabs: before.map((b: any) => `${b.months_from}-${b.months_to}: ${b.discount_pct}% ${b.bonus_buy}+${b.bonus_free}`) }, { slabs: clean.map(b => `${b.from}-${b.to}: ${b.disc}% ${b.buy}+${b.free}`) }, ip);
   return { ok: true };
 }
@@ -108,7 +110,15 @@ async function runRates() {
  * The expiry picture. For each product the batches are walked in expiry order (FEFO): at the current monthly sale,
  * how much of each batch can be sold before it reaches the minimum shelf life? What is left over is "at risk".
  */
-export async function expiryPosition() {
+// The expiry picture is asked for many times while one screen loads (dashboard, action list, buyer matching).
+// It is worked out once and kept for a few seconds; anything that changes stock or lot orders clears it.
+let memo: { at: number; value: any } | null = null;
+export const touchStock = () => { memo = null; };
+export async function expiryPosition(): Promise<Awaited<ReturnType<typeof computePosition>>> {
+  if (!memo || Date.now() - memo.at > 10000) memo = { at: Date.now(), value: await computePosition() };
+  return structuredClone(memo.value);
+}
+async function computePosition() {
   const [rows, rates, slabs, minShelf, near] = [await batches(), await runRates(), await offerSlabs(), await setting('min_shelf_life_months', 2), await setting('near_expiry_months', 6)];
   const sold = new Map<number, number>();
   for (const b of rows) {
@@ -167,8 +177,10 @@ export async function expiryOpportunities(s: Session) {
   const pos = await expiryPosition(), out: any[] = [];
   for (const b of pos.rows.filter(x => x.offer && x.free_boxes > 0).slice(0, 12)) {
     const m = await matchBuyers(s, b.id);
-    for (const c of m.buyers.slice(0, 3)) out.push({ batch_id: b.id, batch_no: b.batch_no, product: b.product, expiry_date: b.expiry_date, months_left: b.months_left, offer: b.offer.text, rate: b.offer.rate, trade_rate: b.trade_rate,
-      customer_id: c.id, customer: c.name, can_take: c.can_take, value: round(c.can_take * b.units_per_box * b.offer.rate) });
+    // One batch cannot be promised twice: hand it to the best buyers until it is used up.
+    let left = b.free_boxes;
+    for (const c0 of m.buyers.slice(0, 3)) { if (left <= 0) break; const c = { ...c0, can_take: Math.min(c0.can_take, left) }; left -= c.can_take; out.push({ batch_id: b.id, batch_no: b.batch_no, product: b.product, expiry_date: b.expiry_date, months_left: b.months_left, offer: b.offer.text, rate: b.offer.rate, trade_rate: b.trade_rate,
+      customer_id: c.id, customer: c.name, can_take: c.can_take, value: round(c.can_take * b.units_per_box * b.offer.rate) }); }
   }
   return out.sort((a, b) => a.months_left - b.months_left || b.value - a.value).slice(0, 40);
 }
@@ -206,6 +218,7 @@ export async function customerFor(s: Session, id: number) {
  * A near-expiry lot line takes its own batch; every other line follows the earliest-expiry-first plan.
  */
 export async function recordDispatch(orderId: number, customerId: number) {
+  touchStock();
   const items = await q<any>('select id, product_id, qty, free_qty, batch_id, batch_no, expiry_date from sales_order_items where order_id=$1 order by id', [orderId]);
   const all = await batches(), minShelf = await setting('min_shelf_life_months', 2);
   for (const it of items) {
@@ -219,3 +232,29 @@ export async function recordDispatch(orderId: number, customerId: number) {
   }
 }
 export const dispatched = (orderId: number) => q<any>('select order_item_id, batch_no, expiry_date, qty from dispatch_batches where order_id=$1 order by id', [orderId]);
+
+/**
+ * What to make next: for every product, the monthly sale, the open orders, the sellable stock and how many boxes
+ * bring the stock up to the target days of sale. Stock that will expire unsold is not counted as cover.
+ */
+export async function demandPlan() {
+  const pos = await expiryPosition(), target = await setting('production_cover_days', 60), stock = new Map<number, { free: number; risk: number }>();
+  for (const b of pos.rows) { const x = stock.get(b.product_id) || { free: 0, risk: 0 }; if (!b.expired && !b.unsellable) { x.free += b.free_boxes; x.risk += b.at_risk; } stock.set(b.product_id, x); }
+  const rows = await q<any>(
+    `select p.id, p.code, p.name, p.pack_size, p.units_per_box, p.trade_rate,
+            coalesce((select sum(i.qty + i.free_qty) from sales_order_items i join sales_orders o on o.id=i.order_id where i.product_id=p.id and o.status in ('Approved','Dispatched') and o.order_date > ${TODAY} - 30),0)::int as last_30,
+            coalesce((select sum(i.qty + i.free_qty) from sales_order_items i join sales_orders o on o.id=i.order_id where i.product_id=p.id and o.status in ('Approved','Dispatched') and o.order_date > ${TODAY} - 90 and o.order_date <= ${TODAY} - 30),0)::int as prev_60,
+            coalesce((select sum(i.qty + i.free_qty) from sales_order_items i join sales_orders o on o.id=i.order_id where i.product_id=p.id and o.status in ('Pending','Approved')),0)::int as open
+       from products p where p.active order by p.name`);
+  const list = rows.map(r => {
+    const perMonth = (r.last_30 + r.prev_60) / 3, prevMonth = r.prev_60 / 2, st = stock.get(r.id), usable = st ? Math.max(0, st.free - st.risk) : null;
+    const trend = prevMonth > 0 ? Math.round((r.last_30 - prevMonth) / prevMonth * 100) : null;
+    // A product that is clearly growing is planned on its last month, not on the slower average.
+    const plan = Math.max(perMonth, trend != null && trend > 20 ? r.last_30 : 0);
+    const need = Math.ceil(plan * target / 30 + r.open), make = usable == null ? null : Math.max(0, need - usable);
+    return { id: r.id, code: r.code, product: r.name, pack_size: r.pack_size, per_month: round(perMonth, 1), last_30: r.last_30, trend_pct: trend, open: r.open,
+      stock: st ? st.free : null, at_risk: st ? st.risk : 0, cover_days: usable != null && plan > 0 ? Math.round((usable - r.open) / plan * 30) : null,
+      make, make_value: make == null ? null : Math.round(make * r.units_per_box * r.trade_rate) };
+  }).filter(r => r.per_month > 0 || r.open > 0 || (r.stock ?? 0) > 0);
+  return { target_days: target, as_of: pos.as_of, rows: list.sort((a, b) => (a.cover_days ?? 9999) - (b.cover_days ?? 9999)), make_value: list.reduce((a, r) => a + (r.make_value || 0), 0) };
+}

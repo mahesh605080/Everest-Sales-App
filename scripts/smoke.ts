@@ -292,6 +292,11 @@ async function main() {
     ok('the collect action can be answered', (await so.post('/api/sales/actions', { key: `col:${c1.id}`, outcome: 'later' })).status === 200);
   }
 
+  { const dp = (await gm.get('/api/expiry?plan=1')).data, nsr = dp.rows.find((r: any) => r.id === ns.id);
+    ok('the demand plan works out cover and what to make', dp.target_days === 60 && nsr && nsr.per_month > 0 && nsr.stock > 0 && nsr.make === Math.max(0, Math.ceil(Math.max(nsr.per_month, nsr.trend_pct > 20 ? nsr.last_30 : 0) * 2 + nsr.open) - (nsr.stock - nsr.at_risk)), nsr);
+    ok('the demand plan is not open to a sales officer', (await so.get('/api/expiry?plan=1')).status === 403 && (await gm.get('/api/reports/demand-plan')).status === 200);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

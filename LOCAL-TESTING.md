@@ -39,9 +39,12 @@ Ye Docker file likhi gayi hai par jis jagah app bana wahan Docker nahi tha, isli
    npm install
    npm run migrate
    npm run seed -- --sample
+   npm run demo
    npm run build
    npm start
    ```
+
+   `npm run demo` 6 mahine ke order, batch-wise stock, distributor stock report, baaki (outstanding), visit, claim, rebate slab aur target bhar deta hai, taki har screen bhari hui dikhe. Khali system dekhna ho to ye line chhod do.
 6. Browser me kholo: http://localhost:3000
 
 ## Login
