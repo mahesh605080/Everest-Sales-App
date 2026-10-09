@@ -9,6 +9,19 @@ export default function Field() {
   const [proj, setProj] = useState(''); const [actual, setActual] = useState('');
   const [v, setV] = useState({ purpose: '', person_met: '', remarks: '', next_visit: '' });
   const lastPing = useRef(0);
+  const [selfie, setSelfie] = useState('');
+  // Shrinks the camera photo to a small JPEG so it uploads quickly on mobile data.
+  function onSelfie(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return;
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = () => {
+      const k = Math.min(1, 480 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height); setSelfie(c.toDataURL('image/jpeg', 0.7)); URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setErr('That file is not a photo. Take the selfie again.'); URL.revokeObjectURL(url); };
+    img.src = url;
+  }
 
   const load = useCallback(async (p?: Pos | null) => {
     try { setD(await call(`/api/field/today${p ? `?lat=${p.lat}&lng=${p.lng}` : ''}`)); } catch (e: any) { setErr(e.message); }
@@ -46,7 +59,9 @@ export default function Field() {
         <div className="hd"><h2>Attendance</h2>{closed ? <span className="pill">Day closed</span> : a ? <span className="pill good">On duty since {fmtTime(a.in_at)}</span> : <span className="pill warn">Not checked in</span>}</div>
         {!a && <>
           <div className="fld"><label htmlFor="proj">Today's sales projection (Rs)</label><input id="proj" type="number" min={0} inputMode="numeric" value={proj} onChange={e => setProj(e.target.value)} placeholder="0" /></div>
-          <div><button className="btn primary" disabled={!!busy} style={{ padding: '11px 18px' }} onClick={() => act('in', '/api/field/checkin', { projection: proj === '' ? 0 : Number(proj) }, () => 'Day started. Time and location saved.')}>{busy === 'in' ? 'Getting location…' : 'Start day'}</button></div>
+          {d.selfie && <div className="fld"><label htmlFor="selfie">Selfie *</label>
+            <div className="toolbar"><div className="l"><input id="selfie" type="file" accept="image/*" capture="user" onChange={onSelfie} />{selfie && <img src={selfie} alt="Your selfie" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--line)' }} />}</div></div></div>}
+          <div><button className="btn primary" disabled={!!busy} style={{ padding: '11px 18px' }} onClick={() => { if (d.selfie && !selfie) { setErr('Take a selfie before starting the day.'); return; } act('in', '/api/field/checkin', { projection: proj === '' ? 0 : Number(proj), photo: selfie || undefined }, () => 'Day started. Time and location saved.'); }}>{busy === 'in' ? 'Getting location…' : 'Start day'}</button></div>
           <p className="sub">Your location is saved at check-in, at each visit and at check-out, and shared with the control room while this page is open during duty hours.</p></>}
         {a && <div className="g" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10 }}>
           <div><div className="lab">Check-in</div><div className="num">{fmtTime(a.in_at)} {a.late && <span className="pill warn">Late</span>}</div></div>
@@ -72,7 +87,7 @@ export default function Field() {
       <section className="card">
         <div className="hd"><h2>My customers</h2><span className="sub">{pos ? `sorted by distance · GPS ±${Math.round(pos.accuracy)} m` : 'allow location to sort by distance'}</span></div>
         <div className="feed">{d.customers.map((c: any) => <div key={c.id} style={{ alignItems: 'center' }}>
-          <div className="t"><b>{c.name}</b><br /><span className="code">{c.code} · {c.type} · {c.town || '–'} · last visit {c.last_visit ? new Date(c.last_visit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'never'}</span></div>
+          <div className="t"><b>{c.name}</b>{c.planned && <span className="pill info" style={{ marginLeft: 6 }}>Planned today</span>}<br /><span className="code">{c.code} · {c.type} · {c.town || '–'} · last visit {c.last_visit ? new Date(c.last_visit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'never'}</span></div>
           <span className={`pill ${c.distance_m == null ? '' : c.distance_m <= d.radius ? 'good' : 'warn'}`}>{c.lat == null ? 'location not set' : fmtDist(c.distance_m)}</span>
           {a && !closed && !open && <button className="btn sm primary" disabled={!!busy} onClick={() => act('v' + c.id, '/api/field/visit/start', { customer_id: c.id },
             r => r.visit.captured ? 'Checked in. This is now the customer\'s saved location.' : r.visit.out_of_fence ? `Checked in, flagged: ${r.visit.distance_m} m is outside the ${r.visit.radius} m geo-fence.` : 'Checked in at the customer.')}>{busy === 'v' + c.id ? 'Locating…' : 'Check in'}</button>}

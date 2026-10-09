@@ -29,13 +29,14 @@ export async function today(s: Session, at?: { lat?: any; lng?: any }) {
   const visits = await q<any>(`select v.*, c.name as customer, c.code as customer_code from visits v join customers c on c.id=v.customer_id where v.user_id=$1 and v.day=${TODAY} order by v.in_at`, [s.id]);
   const customers = await q<any>(
     `select c.id,c.code,c.name,c.type,c.town,c.lat,c.lng,c.dda_expiry,
-            (select max(in_at) from visits v where v.customer_id=c.id) as last_visit
+            (select max(in_at) from visits v where v.customer_id=c.id) as last_visit,
+            exists(select 1 from tour_plan_items i join tour_plans tp on tp.id=i.plan_id where tp.user_id=$1 and tp.status='Approved' and i.customer_id=c.id and i.day=${TODAY}) as planned
        from customers c join customer_assignments ca on ca.customer_id=c.id and ca.to_date is null
       where ca.user_id=$1 and c.active order by c.name`, [s.id]);
   const lat = Number(at?.lat), lng = Number(at?.lng), have = at?.lat != null && Number.isFinite(lat) && Number.isFinite(lng);
   for (const c of customers) c.distance_m = have && c.lat != null && c.lng != null ? metres(lat, lng, c.lat, c.lng) : null;
   if (have) customers.sort((a, b) => (a.distance_m ?? 1e12) - (b.distance_m ?? 1e12));
-  return { attendance: att, open: visits.find(v => !v.out_at) || null, visits, customers, radius: await setting('geo_fence_radius_m', 200), purposes: PURPOSES };
+  return { selfie: !!(await setting('selfie_required', 1)), attendance: att, open: visits.find(v => !v.out_at) || null, visits, customers, radius: await setting('geo_fence_radius_m', 200), purposes: PURPOSES };
 }
 
 export async function checkIn(s: Session, b: any, ip: string | null) {
@@ -43,9 +44,16 @@ export async function checkIn(s: Session, b: any, ip: string | null) {
   if (!Number.isFinite(proj) || proj < 0) throw new HttpError(422, "Enter today's sales projection in rupees (0 if none).");
   if (await q1(`select 1 from attendance where user_id=$1 and day=${TODAY}`, [s.id])) throw new HttpError(409, 'You have already checked in today.');
   const lateAfter = await setting('checkin_late_after_min', 570);
+  let photoId: number | null = null;
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(b.photo || ''));
+  if (m) {
+    const buf = Buffer.from(m[1], 'base64');
+    if (buf.length > 400 * 1024) throw new HttpError(413, 'The selfie is too large. Take it again.');
+    photoId = (await q1<any>(`insert into photos(user_id,kind,mime,data) values($1,'checkin','image/jpeg',$2) returning id`, [s.id, buf]))!.id;
+  } else if (await setting('selfie_required', 1)) throw new HttpError(422, 'Take a selfie before starting the day.');
   const row = await q1<any>(
-    `insert into attendance(user_id,day,in_lat,in_lng,in_accuracy,projection,late)
-     values($1,${TODAY},$2,$3,$4,$5, extract(hour from ${NPT})*60+extract(minute from ${NPT}) > $6) returning *`, [s.id, p.lat, p.lng, p.acc, proj, lateAfter]);
+    `insert into attendance(user_id,day,in_lat,in_lng,in_accuracy,projection,late,in_photo_id)
+     values($1,${TODAY},$2,$3,$4,$5, extract(hour from ${NPT})*60+extract(minute from ${NPT}) > $6, $7) returning *`, [s.id, p.lat, p.lng, p.acc, proj, lateAfter, photoId]);
   await ping(s.id, p); await audit(s, 'check-in', 'attendance', row.id, null, null, ip);
   return row;
 }
@@ -117,7 +125,7 @@ export async function teamToday(s: Session, day?: string) {
   const scope = teamScope(s, params);
   return q<any>(
     `select u.id,u.code,u.name,r.name as role,a.name as area,g.name as region,
-            t.in_at,t.out_at,t.late,t.auto_closed,t.projection,t.actual,t.in_lat,t.in_lng,
+            t.in_at,t.out_at,t.late,t.auto_closed,t.projection,t.actual,t.in_lat,t.in_lng,t.in_photo_id,
             (select count(*)::int from visits v where v.user_id=u.id and v.day=${d}) as visits,
             (select count(*)::int from visits v where v.user_id=u.id and v.day=${d} and v.out_of_fence) as flagged,
             (select c.name from visits v join customers c on c.id=v.customer_id where v.user_id=u.id and v.out_at is null limit 1) as at_customer,

@@ -34,7 +34,8 @@ export default function Team() {
           {isToday && <span className="live"><i />refreshes every 30 seconds</span>}</div><div className="r"><Link className="btn" href="/map">Open live map</Link></div></div>
         {err && <div className="errbox" role="alert">{err}</div>}
         <div className="tbl"><table><thead><tr><th>Person</th><th>Area</th><th>Status</th><th>Check-in</th><th>Check-out</th><th className="r">Visits</th><th className="r">Projection</th><th className="r">Actual</th><th>Last location</th></tr></thead>
-          <tbody>{p.map(x => { const [t, k] = status(x, isToday); return <tr key={x.id}><td><b>{x.name}</b><br /><span className="code">{x.code} · {x.role}</span></td><td>{x.area || x.region || '–'}</td><td><span className={`pill ${k}`}>{t}</span></td>
+          <tbody>{p.map(x => { const [t, k] = status(x, isToday); return <tr key={x.id}><td><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{x.in_photo_id ? <a href={`/api/photo/${x.in_photo_id}`} target="_blank" rel="noreferrer"><img src={`/api/photo/${x.in_photo_id}`} alt={`Check-in selfie of ${x.name}`} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', display: 'block' }} /></a> : <div className="av">{x.name.split(' ').map((w: string) => w[0]).slice(0, 2).join('')}</div>}
+              <div><b>{x.name}</b><br /><span className="code">{x.code} · {x.role}</span></div></div></td><td>{x.area || x.region || '–'}</td><td><span className={`pill ${k}`}>{t}</span></td>
             <td className="num">{fmtTime(x.in_at)} {x.late && <span className="pill warn">Late</span>}</td><td className="num">{fmtTime(x.out_at)}</td>
             <td className="r num">{x.visits}{x.flagged ? <span className="pill crit" style={{ marginLeft: 6 }}>{x.flagged} flagged</span> : null}</td>
             <td className="r num">{x.in_at ? rs(x.projection) : '–'}</td><td className="r num">{x.actual != null ? rs(x.actual) : '–'}</td>

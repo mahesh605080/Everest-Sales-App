@@ -31,7 +31,11 @@ This is Phase 1: the foundation that every later phase builds on.
 
 Alert rules are checked whenever someone has Team today or Alerts open (at most once a minute). For checks with nobody looking, have the server call `GET /api/alerts` on a schedule, or wait for the notification service planned with the Android app.
 
-Still to come in Phase 2: monthly tour plan with approval, selfie at check-in, notices, and the Android app with background tracking.
+| Selfie | Check-in needs a selfie (switch it off with the `selfie_required` setting). The photo is shrunk on the phone, stored in the database and shown in Team today |
+| Tour plan | A field user plans customers per day for a month and submits it; the manager approves or sends it back with remarks. Planned, done and off-plan visits are counted, and planned customers are marked in My day |
+| Notices | Head office publishes a notice to everyone, one role or one region, with an end date. Users mark it read; the publisher sees the read count |
+
+Still to come in Phase 2: the Android app (background tracking, mock-location detection, push notifications).
 
 Not built yet: booklets, sales orders, credit control, collections, expenses, targets, reports. They are listed in the left menu under "Coming next".
 
