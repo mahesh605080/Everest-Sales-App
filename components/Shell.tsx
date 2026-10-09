@@ -8,10 +8,11 @@ type Item = { href: string; label: string };
 type Group = { group: string; items: Item[] };
 const SOON = [['Android and iOS app', 'Next'], ['Samples, competitor info', 'Next'], ['Order PDF, SMS and push', 'Next']];
 
-export default function Shell({ user, nav, titles, today, children }: { user: { name: string; role_name: string; must_change_password: boolean }; nav: Group[]; titles: Record<string, [string, string]>; today?: string; children: React.ReactNode }) {
+export default function Shell({ user, nav, primary = [], titles, today, children }: { user: { name: string; role_name: string; must_change_password: boolean }; nav: Group[]; primary?: Item[]; titles: Record<string, [string, string]>; today?: string; children: React.ReactNode }) {
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const [toastMsg, setToast] = useState('');
+  const [more, setMore] = useState(false);
   const [bell, setBell] = useState(false); const [notes, setNotes] = useState<{ unread: number; items: any[] }>({ unread: 0, items: [] }); const [install, setInstall] = useState<any>(null);
   useEffect(() => {
     const load = () => call('/api/notifications').then(setNotes).catch(() => {});
@@ -70,7 +71,7 @@ export default function Shell({ user, nav, titles, today, children }: { user: { 
 
   // Cards below the fold rise in as they are scrolled to.
   useEffect(() => {
-    setMenu(false); setBell(false);
+    setMenu(false); setBell(false); setMore(false);
     if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion:reduce)').matches) return;
     const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -6% 0px' });
     const t = setTimeout(() => document.querySelectorAll('#view .card:not(.rv)').forEach(c => { if (c.getBoundingClientRect().top > innerHeight * 0.92) { c.classList.add('rv'); io.observe(c); } }), 60);
@@ -127,6 +128,13 @@ export default function Shell({ user, nav, titles, today, children }: { user: { 
           </main>
         </div>
       </div>
+      {primary.length > 0 && <div className="bottomnav" role="navigation" aria-label="Main">
+        {primary.map(i => <Link key={i.href} href={i.href} aria-current={path === i.href || path.startsWith(i.href + '/') ? 'page' : undefined}>{i.label}</Link>)}
+        <button onClick={() => setMore(m => !m)} aria-expanded={more}>{more ? 'Close' : 'More'}</button>
+      </div>}
+      {more && <div className="sheet" role="dialog" aria-label="All sections">
+        {nav.map(g => <div key={g.group}><div className="grp">{g.group}</div><div className="sheetgrid">{g.items.map(i => <Link key={i.href} href={i.href} aria-current={path === i.href ? 'page' : undefined}>{i.label}</Link>)}</div></div>)}
+      </div>}
       {toastMsg && <div id="toast" role="status">{toastMsg}</div>}
     </>
   );

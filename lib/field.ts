@@ -132,9 +132,11 @@ export async function teamToday(s: Session, day?: string) {
             (select c.name from visits v join customers c on c.id=v.customer_id where v.user_id=u.id and v.out_at is null limit 1) as at_customer,
             (select max(coalesce(v.out_at, v.in_at)) from visits v where v.user_id=u.id and v.day=${d}) as last_visit_at,
             (select max(p.at) from location_pings p where p.user_id=u.id and p.at > now() - interval '12 hours') as last_ping,
+            lp.lat as lat, lp.lng as lng, lp.accuracy as accuracy,
             exists(select 1 from leaves l where l.user_id=u.id and l.status='Approved' and ${d} between l.from_date and l.to_date) as on_leave
        from users u join roles r on r.id=u.role_id left join areas a on a.id=u.area_id left join regions g on g.id=u.region_id
        left join attendance t on t.user_id=u.id and t.day=${d}
+       left join lateral (select lat,lng,accuracy from location_pings p where p.user_id=u.id and p.at > now() - interval '12 hours' order by p.at desc limit 1) lp on true
       where u.active and r.permissions ? 'field.use' and r.key <> 'admin'${scope}
       order by r.level, u.name`, params);
 }
@@ -253,4 +255,24 @@ export async function ackAlert(s: Session, id: number) {
   if (!ok) throw new HttpError(404, 'This alert is already acknowledged or is outside your team.');
   await q('update alerts set ack_by=$1, ack_at=now() where id=$2', [s.id, id]);
   return { ok: true };
+}
+
+/** Everything one person did on one day: attendance, visits in order, and the GPS path with its length. */
+export async function dayTrail(s: Session, userId: number, day: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new HttpError(422, 'Choose a date.');
+  const p: any[] = [userId]; const scope = teamScope(s, p);
+  const person = Number.isInteger(userId) ? await q1<any>(`select u.id,u.code,u.name,r.name as role,a.name as area from users u join roles r on r.id=u.role_id left join areas a on a.id=u.area_id where u.id=$1${scope}`, p) : null;
+  if (!person) throw new HttpError(404, 'This person is not in your team.');
+  const attendance = await q1<any>('select in_at,out_at,late,auto_closed,projection,actual,in_lat,in_lng,out_lat,out_lng,in_photo_id from attendance where user_id=$1 and day=$2::date', [userId, day]);
+  const visits = await q<any>(`select v.id,v.in_at,v.out_at,v.in_lat,v.in_lng,v.distance_m,v.out_of_fence,v.purpose,v.person_met,v.remarks,c.name as customer,c.code as customer_code,c.lat as c_lat,c.lng as c_lng
+                                 from visits v join customers c on c.id=v.customer_id where v.user_id=$1 and v.day=$2::date order by v.in_at`, [userId, day]);
+  const points = await q<any>(`select lat,lng,at from location_pings where user_id=$1 and (at at time zone 'Asia/Kathmandu')::date=$2::date and coalesce(accuracy,0) <= 200 order by at limit 5000`, [userId, day]);
+  let m = 0; const stops: { lat: number; lng: number; from: string; minutes: number }[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const d = metres(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng), gap = (Date.parse(points[i].at) - Date.parse(points[i - 1].at)) / 60000;
+    if (d >= 30) m += d;
+    // Barely moved for 30 minutes or more between two points: a stop worth showing.
+    else if (gap >= 30) stops.push({ lat: points[i - 1].lat, lng: points[i - 1].lng, from: points[i - 1].at, minutes: Math.round(gap) });
+  }
+  return { person, day, attendance, visits, points, km: Math.round(m / 100) / 10, stops };
 }

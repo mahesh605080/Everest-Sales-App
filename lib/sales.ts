@@ -8,6 +8,7 @@ import { teamScope, TODAY } from './field';
 import { can, Session } from './perm';
 import { fyLabel } from './bs';
 import { notify, roleInTerritory, withPerm } from './notify';
+import { filterSql, ListFilter } from './filters';
 
 export { fyLabel };
 
@@ -121,7 +122,7 @@ async function expire() {
 const BK_SELECT = `select b.*, c.name as customer, c.code as customer_code, c.town, u.name as person, u.code as person_code, a.name as area
   from booklets b join customers c on c.id=b.customer_id join users u on u.id=b.user_id left join areas a on a.id=u.area_id`;
 
-export async function listBooklets(s: Session, box: string, customerId?: number) {
+export async function listBooklets(s: Session, box: string, customerId?: number, f?: ListFilter) {
   await expire();
   const p: any[] = []; let w = '';
   if (box === 'mine') { p.push(s.id); w = 'b.user_id=$1'; }
@@ -129,6 +130,7 @@ export async function listBooklets(s: Session, box: string, customerId?: number)
   else if (box === 'usable') { p.push(customerId); w = `b.status='Accepted' and b.customer_id=$1`; if (!can(s, 'credit.manage')) await customerFor(s, Number(customerId)); }
   else if (box === 'accepted') { if (!can(s, 'credit.manage')) throw new HttpError(403, 'Your role does not allow this.'); w = `b.status='Accepted'`; }
   else { if (!can(s, 'sales.view')) throw new HttpError(403, 'Your role does not allow this.'); w = 'true' + teamScope(s, p); }
+  w += filterSql(p, f, { status: 'b.status', text: ['b.no', 'c.name', 'u.name'], date: 'b.order_date' });
   return q<any>(`${BK_SELECT} where ${w} order by b.created_at desc limit 300`, p);
 }
 
@@ -232,11 +234,12 @@ const SO_SELECT = `select o.*, c.name as customer, c.code as customer_code, c.to
   from sales_orders o join customers c on c.id=o.customer_id join users u on u.id=o.user_id left join areas a on a.id=u.area_id
   left join payment_terms t on t.id=o.payment_term_id left join booklets b on b.id=o.booklet_id left join users d on d.id=o.decided_by`;
 
-export async function listOrders(s: Session, box: string) {
+export async function listOrders(s: Session, box: string, f?: ListFilter) {
   const p: any[] = []; let w = '';
   if (box === 'mine') { p.push(s.id); w = 'o.user_id=$1'; }
   else if (box === 'queue' || box === 'approved') { if (!can(s, 'credit.manage') && !can(s, 'dispatch.manage')) throw new HttpError(403, 'Your role does not allow this.'); w = box === 'queue' ? `o.status='Pending'` : `o.status='Approved'`; }
   else { if (!can(s, 'sales.view')) throw new HttpError(403, 'Your role does not allow this.'); w = 'true' + (can(s, 'credit.manage') ? '' : teamScope(s, p)); }
+  w += filterSql(p, f, { status: 'o.status', text: ['o.no', 'c.name', 'u.name'], date: 'o.order_date' });
   const rows = await q<any>(`${SO_SELECT} where ${w} order by ${box === 'queue' ? 'o.created_at' : 'o.created_at desc'} limit 300`, p);
   if (box === 'queue') for (const r of rows) { const c = await creditSnapshot(r.customer_id); r.available = c.available; r.over_now = r.value > c.available; r.stale = c.stale; r.dda_expired = c.dda_expired; }
   return rows;

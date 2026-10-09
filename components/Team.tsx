@@ -40,7 +40,7 @@ export default function Team() {
             <td className="num">{fmtTime(x.in_at)} {x.late && <span className="pill warn">Late</span>}</td><td className="num">{fmtTime(x.out_at)}</td>
             <td className="r num">{x.visits}{x.flagged ? <span className="pill crit" style={{ marginLeft: 6 }}>{x.flagged} flagged</span> : null}</td>
             <td className="r num">{x.in_at ? rs(x.projection) : '–'}</td><td className="r num">{x.actual != null ? rs(x.actual) : '–'}</td>
-            <td className="code">{isToday && x.last_ping ? fmtTime(x.last_ping) : '–'}</td></tr>; })}
+            <td className="code">{isToday && x.last_ping ? fmtTime(x.last_ping) : '–'} {x.in_at && <a className="btn sm" href={`/map?user=${x.id}&day=${day}`}>Day on map</a>}</td></tr>; })}
             {people && !p.length && <tr><td colSpan={9}><p className="sub" style={{ padding: '12px 0' }}>No field staff in your team yet. Add employees with a field role and an area.</p></td></tr>}
             {!people && !err && <tr><td colSpan={9}><p className="sub" style={{ padding: '12px 0' }}>Loading…</p></td></tr>}</tbody></table></div>
       </section>

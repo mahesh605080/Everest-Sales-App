@@ -101,6 +101,16 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Targets by Excel | On the scorecard page: download the month's targets sheet, fill it, upload it. Unknown codes and bad amounts are listed |
 | Session security | A temporary password blocks every screen and API except changing it. Changing or resetting a password, or deactivating a person, signs out all their other sessions |
 
+## Experience upgrades
+
+| Area | What works now |
+| --- | --- |
+| A person's day on the map | On the live map, "Day on map" (or the link in Team today) draws that person's GPS path for any date, numbers the visits in order, marks stops of 30 minutes or more, and lists the day's timeline with distance |
+| Live map status | People are coloured by status (on visit, in the field, no visit for 2h+, day closed) with counts and a region filter; customers can be switched off |
+| Customer page | `/customers/{id}`: details, credit position, 12-month sales and collection, visits, booklets, orders, collections, claims, latest stock report and who has looked after the customer. Linked from the customer list, My day, the map and Credit control |
+| Filters | Booklets, sales orders, collections, expenses, claims and leave can be filtered by status, text and date range (`?status=&q=&from=&to=` on the API) |
+| Phone menu | On a phone the long side menu is replaced by a bottom bar with the four most-used screens for the role and a "More" sheet with everything else |
+
 ## Audit fixes (hardening)
 
 | Finding | Fix |

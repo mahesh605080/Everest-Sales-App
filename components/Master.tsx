@@ -6,7 +6,7 @@ import { ApiError, call, rs, toast } from '@/lib/ui';
 type Opt = { id: number; label: string };
 const today = () => new Date().toISOString().slice(0, 10);
 
-function Cell({ f, row }: { f: Field; row: any }) {
+function Cell({ f, row, link }: { f: Field; row: any; link?: string }) {
   const v = row[f.key];
   if (f.type === 'rel') return <>{row[f.key + '__label'] ?? <span className="code">–</span>}</>;
   if (v == null || v === '') return <span className="code">–</span>;
@@ -18,6 +18,7 @@ function Cell({ f, row }: { f: Field; row: any }) {
   }
   if (f.type === 'date') return <span className="num">{v}</span>;
   if (f.key === 'code') return <span className="code" style={{ color: 'var(--ink)' }}>{v}</span>;
+  if (f.key === 'name' && link) return <a href={link} onClick={e => e.stopPropagation()}><b>{v}</b></a>;
   if (f.key === 'name') return <b>{v}</b>;
   return <>{String(v)}</>;
 }
@@ -110,7 +111,7 @@ export default function Master({ ent, canEdit, canImport, canExport }: { ent: En
               {rows.map(r => (
                 <tr key={r.id} onClick={canEdit ? () => open(r) : undefined} style={canEdit ? { cursor: 'pointer' } : undefined} tabIndex={canEdit ? 0 : undefined}
                   onKeyDown={canEdit ? e => { if (e.key === 'Enter') open(r); } : undefined}>
-                  {listFields.map(f => <td key={f.key} className={['money', 'int', 'float'].includes(f.type) ? 'r' : ''}><Cell f={f} row={r} /></td>)}
+                  {listFields.map(f => <td key={f.key} className={['money', 'int', 'float'].includes(f.type) ? 'r' : ''}><Cell f={f} row={r} link={ent.key === 'customers' ? `/customers/${r.id}` : undefined} /></td>)}
                   <td>{r.active ? <span className="pill good">Active</span> : <span className="pill">Inactive</span>}</td>
                 </tr>
               ))}

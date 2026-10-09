@@ -4,6 +4,7 @@ import type { ReqDef, RField } from '@/lib/reqdefs';
 import { call, rs, toast } from '@/lib/ui';
 import { nptToday } from '@/lib/geo';
 import { ST, when } from './SalesBits';
+import FilterBar, { Filter, filterQuery, noFilter } from './FilterBar';
 
 /** Shrinks a camera photo and uploads it; gives back the stored photo's id. */
 export function PhotoInput({ id, value, onChange }: { id: string; value: number | null; onChange: (id: number | null) => void }) {
@@ -58,14 +59,16 @@ function NewForm({ def, onDone }: { def: ReqDef; onDone: () => void }) {
 
 export default function Requests({ def, canCreate, canDecide, hasInbox = true }: { def: ReqDef; canCreate: boolean; canDecide: boolean; hasInbox?: boolean }) {
   const boxes = [canDecide && hasInbox && ['inbox', 'Waiting for me'], canCreate && ['mine', 'Mine'], canDecide && ['all', hasInbox ? 'All' : 'Team']].filter(Boolean) as string[][];
-  const [box, setBox] = useState(boxes[0][0]); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [adding, setAdding] = useState(false); const [rm, setRm] = useState<Record<number, string>>({});
-  const load = useCallback(() => call(`/api/req/${def.key}?box=${box}`).then(r => { setRows(r.rows); setErr(''); }).catch(e => setErr(e.message)), [def.key, box]);
+  const [box, setBox] = useState(boxes[0][0]); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [adding, setAdding] = useState(false); const [rm, setRm] = useState<Record<number, string>>({}); const [flt, setFlt] = useState<Filter>(noFilter);
+  const statuses = hasInbox ? [...new Set(['Submitted', ...def.steps.map(st => st.to), 'Rejected', 'Withdrawn'])] : [];
+  const load = useCallback(() => call(`/api/req/${def.key}?box=${box}${filterQuery(flt)}`).then(r => { setRows(r.rows); setErr(''); }).catch(e => setErr(e.message)), [def.key, box, flt]);
   useEffect(() => { setRows(null); load(); }, [load]);
   async function act(id: number, action: string) { setErr(''); try { const r = await call(`/api/req/${def.key}/${id}`, { method: 'POST', json: { action, remarks: rm[id] || '' } }); toast(r.message); load(); } catch (e: any) { setErr(e.message); } }
   const amount = (r: any) => r.amount ?? r.total;
   return <>
-    <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => setBox(b[0])}>{b[1]}</button>)}</div>
-      <div className="r">{canCreate && !adding && <button className="btn primary" onClick={() => setAdding(true)}>New {def.one}</button>}</div></div></section>
+    <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => { setBox(b[0]); setFlt(noFilter); }}>{b[1]}</button>)}</div>
+      <div className="r">{canCreate && !adding && <button className="btn primary" onClick={() => setAdding(true)}>New {def.one}</button>}</div></div>
+      {box !== 'inbox' && <FilterBar id={`rq-${def.key}`} statuses={statuses} value={flt} onChange={setFlt} hint="Search person or customer" />}</section>
     {adding && <NewForm def={def} onDone={() => { setAdding(false); if (canCreate) setBox('mine'); load(); }} />}
     {err && <div className="errbox" role="alert">{err}</div>}
     {(rows || []).map(r => <section className="card" key={r.id}>

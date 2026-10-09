@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { call, rs, toast } from '@/lib/ui';
 import { nptToday } from '@/lib/geo';
 import { CreditBox, Status, Trail, VarPill } from './SalesBits';
+import FilterBar, { Filter, filterQuery, noFilter } from './FilterBar';
 
 const blank = () => ({ product_id: '', qty: '10', ask_rate: '', bonus_buy: '', bonus_free: '', discount_pct: '', remarks: '' });
 const net = (l: any) => (Number(l.ask_rate) || 0) * (1 - (Number(l.discount_pct) || 0) / 100) * (Number(l.bonus_free) > 0 && Number(l.bonus_buy) > 0 ? Number(l.bonus_buy) / (Number(l.bonus_buy) + Number(l.bonus_free)) : 1);
@@ -79,14 +80,14 @@ function NewBooklet({ onDone, fromId }: { onDone: () => void; fromId?: number | 
 
 export default function Booklets({ canCreate, canApprove, canAll }: { canCreate: boolean; canApprove: boolean; canAll: boolean }) {
   const boxes = [canApprove && ['inbox', 'To approve'], canCreate && ['mine', 'My booklets'], canAll && ['all', 'All']].filter(Boolean) as string[][];
-  const [box, setBox] = useState(boxes[0]?.[0] || 'mine'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<number | null>(null); const [adding, setAdding] = useState(false); const [revise, setRevise] = useState<number | null>(null);
-  const load = useCallback(() => call(`/api/booklets?box=${box}`).then(r => { setRows(r.booklets); setErr(''); }).catch(e => setErr(e.message)), [box]);
+  const [box, setBox] = useState(boxes[0]?.[0] || 'mine'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<number | null>(null); const [adding, setAdding] = useState(false); const [revise, setRevise] = useState<number | null>(null); const [flt, setFlt] = useState<Filter>(noFilter);
+  const load = useCallback(() => call(`/api/booklets?box=${box}${filterQuery(flt)}`).then(r => { setRows(r.booklets); setErr(''); }).catch(e => setErr(e.message)), [box, flt]);
   useEffect(() => { setRows(null); setOpen(null); load(); }, [load]);
   return (
     <>
-      <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => setBox(b[0])}>{b[1]}</button>)}</div>
+      <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => { setBox(b[0]); setFlt(noFilter); }}>{b[1]}</button>)}</div>
         <div className="r">{canCreate && !adding && <button className="btn primary" onClick={() => setAdding(true)}>New booklet</button>}</div></div>
-        <p className="sub">A booklet asks for a rate or scheme below the trade rate for one customer. How far it travels depends on how far below the base rate it is.</p></section>
+        {box !== 'inbox' && <FilterBar id="bk" statuses={['Pending', 'Sent back', 'Accepted', 'Rejected', 'Cancelled', 'Expired']} value={flt} onChange={setFlt} hint="Search number, customer or person" />}</section>
       {adding && <NewBooklet key={revise ?? 'new'} fromId={revise} onDone={() => { setAdding(false); setRevise(null); setBox('mine'); load(); }} />}
       {err && <div className="errbox" role="alert">{err}</div>}
       {(rows || []).map(b => <section className="card" key={b.id}>
@@ -94,7 +95,7 @@ export default function Booklets({ canCreate, canApprove, canAll }: { canCreate:
           <div className="toolbar">{b.status === 'Pending' && <span className="pill info">With {b.level.toUpperCase()} · final {b.final_level.toUpperCase()}</span>}<VarPill v={b.max_variance} /><Status s={b.status} />{canCreate && box === 'mine' && b.status === 'Sent back' && <button className="btn sm primary" onClick={() => { setRevise(b.id); setAdding(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Revise</button>}
             <button className="btn sm" onClick={() => setOpen(open === b.id ? null : b.id)}>{open === b.id ? 'Close' : 'Open'}</button></div></div>
         {open === b.id && <BookletDetail id={b.id} onDone={() => { setOpen(null); load(); }} />}</section>)}
-      {rows && !rows.length && <section className="card"><p className="sub">{box === 'inbox' ? 'Nothing is waiting for your approval.' : 'No booklets here yet.'}</p></section>}
+      {rows && !rows.length && <section className="card"><p className="sub">{box === 'inbox' ? 'Nothing is waiting for your approval.' : flt !== noFilter ? 'No booklet matches these filters.' : 'No booklets here yet.'}</p></section>}
     </>
   );
 }

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { call, rs, toast } from '@/lib/ui';
 import { CreditBox, Status, Trail } from './SalesBits';
+import FilterBar, { Filter, filterQuery, noFilter } from './FilterBar';
 
 export function OrderDetail({ id, onDone }: { id: number; onDone: () => void }) {
   const [d, setD] = useState<any>(null); const [err, setErr] = useState(''); const [rm, setRm] = useState(''); const [inv, setInv] = useState(''); const [busy, setBusy] = useState(false);
@@ -90,17 +91,18 @@ function NewOrder({ onDone }: { onDone: () => void }) {
 
 export default function Orders({ canCreate, canAll }: { canCreate: boolean; canAll: boolean }) {
   const boxes = [canCreate && ['mine', 'My orders'], canAll && ['all', 'All']].filter(Boolean) as string[][];
-  const [box, setBox] = useState(boxes[0]?.[0] || 'all'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<number | null>(null); const [adding, setAdding] = useState(false);
-  const load = useCallback(() => call(`/api/orders?box=${box}`).then(r => { setRows(r.orders); setErr(''); }).catch(e => setErr(e.message)), [box]);
+  const [box, setBox] = useState(boxes[0]?.[0] || 'all'); const [rows, setRows] = useState<any[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<number | null>(null); const [adding, setAdding] = useState(false); const [flt, setFlt] = useState<Filter>(noFilter);
+  const load = useCallback(() => call(`/api/orders?box=${box}${filterQuery(flt)}`).then(r => { setRows(r.orders); setErr(''); }).catch(e => setErr(e.message)), [box, flt]);
   useEffect(() => { setRows(null); setOpen(null); load(); }, [load]);
   return (
     <>
-      <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => setBox(b[0])}>{b[1]}</button>)}</div>
-        <div className="r">{canCreate && !adding && <button className="btn primary" onClick={() => setAdding(true)}>New sales order</button>}</div></div></section>
+      <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => { setBox(b[0]); setFlt(noFilter); }}>{b[1]}</button>)}</div>
+        <div className="r">{canCreate && !adding && <button className="btn primary" onClick={() => setAdding(true)}>New sales order</button>}</div></div>
+        <FilterBar id="od" statuses={['Pending', 'Approved', 'Dispatched', 'Rejected', 'Withdrawn']} value={flt} onChange={setFlt} hint="Search number, customer or person" /></section>
       {adding && <NewOrder onDone={() => { setAdding(false); load(); }} />}
       {err && <div className="errbox" role="alert">{err}</div>}
       {(rows || []).map(o => <OrderCard key={o.id} o={o} open={open === o.id} toggle={() => setOpen(open === o.id ? null : o.id)} onDone={() => { setOpen(null); load(); }} />)}
-      {rows && !rows.length && <section className="card"><p className="sub">No sales orders here yet.</p></section>}
+      {rows && !rows.length && <section className="card"><p className="sub">{flt !== noFilter ? 'No sales order matches these filters.' : 'No sales orders here yet.'}</p></section>}
     </>
   );
 }

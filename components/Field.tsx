@@ -87,7 +87,7 @@ export default function Field() {
       <section className="card">
         <div className="hd"><h2>My customers</h2><span className="sub">{pos ? `sorted by distance · GPS ±${Math.round(pos.accuracy)} m` : 'allow location to sort by distance'}</span></div>
         <div className="feed">{d.customers.map((c: any) => <div key={c.id} style={{ alignItems: 'center' }}>
-          <div className="t"><b>{c.name}</b>{c.planned && <span className="pill info" style={{ marginLeft: 6 }}>Planned today</span>}<br /><span className="code">{c.code} · {c.type} · {c.town || '–'} · last visit {c.last_visit ? new Date(c.last_visit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'never'}</span></div>
+          <div className="t"><a href={`/customers/${c.id}`}><b>{c.name}</b></a>{c.planned && <span className="pill info" style={{ marginLeft: 6 }}>Planned today</span>}<br /><span className="code">{c.code} · {c.type} · {c.town || '–'} · last visit {c.last_visit ? new Date(c.last_visit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'never'}</span></div>
           <span className={`pill ${c.distance_m == null ? '' : c.distance_m <= d.radius ? 'good' : 'warn'}`}>{c.lat == null ? 'location not set' : fmtDist(c.distance_m)}</span>
           {a && !closed && !open && <button className="btn sm primary" disabled={!!busy} onClick={() => act('v' + c.id, '/api/field/visit/start', { customer_id: c.id },
             r => r.visit.captured ? 'Checked in. This is now the customer\'s saved location.' : r.visit.out_of_fence ? `Checked in, flagged: ${r.visit.distance_m} m is outside the ${r.visit.radius} m geo-fence.` : 'Checked in at the customer.')}>{busy === 'v' + c.id ? 'Locating…' : 'Check in'}</button>}

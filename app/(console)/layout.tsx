@@ -54,6 +54,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/credit': ['Credit control', 'Order approval, limits, instruments, outstanding upload and dispatch'],
     '/scorecard': ['Targets and scorecard', 'Month target, achievement, score and incentive for every field person'],
     '/reports': ['Reports', 'Excel downloads for monitoring, sales, money and people'],
+    '/customers': ['Customer', 'Everything about one customer in one place'],
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],
@@ -62,8 +63,15 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   for (const d of Object.values(REQ)) titles[`/r/${d.key}`] = [d.label, d.intro];
   titles['/stock'] = ['Distributor stock', 'What each distributor holds, how fast it sells and what is near expiry'];
   for (const e of Object.values(ENT)) titles[`/m/${e.key}`] = [e.label, e.note || `Add, edit, import and export ${e.label.toLowerCase()}`];
+  // Phone: four most-used screens in a bar at the bottom, everything else behind "More".
+  const have = new Set(nav.flatMap(g => g.items.map(i => i.href)));
+  const order: [string, string][] = can(s, 'scorecard.view') ? [['/dashboard', 'Home'], ['/team', 'Team'], ['/booklets', 'Approvals'], ['/alerts', 'Alerts'], ['/map', 'Map']]
+    : can(s, 'credit.manage') ? [['/dashboard', 'Home'], ['/credit', 'Credit'], ['/r/collections', 'Collections'], ['/reports', 'Reports']]
+      : can(s, 'field.use') ? [['/field', 'My day'], ['/m/customers', 'Customers'], ['/orders', 'Orders'], ['/booklets', 'Booklets'], ['/dashboard', 'Home']]
+        : [['/dashboard', 'Home'], ['/m/employees', 'Employees'], ['/roles', 'Roles'], ['/audit', 'Audit']];
+  const primary = order.filter(([h]) => have.has(h)).slice(0, 4).map(([href, label]) => ({ href, label }));
   const ad = (await q1<any>(`select ${TODAY}::text d`))!.d as string;
   const today = new Date(ad + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) + ' · ' + toBs(ad).text + ' BS';
   // A person on a temporary password can do nothing until it is changed.
-  return <Shell user={{ name: s.name, role_name: s.role_name, must_change_password: s.must_change_password }} nav={s.must_change_password ? [] : nav} titles={titles} today={today}>{s.must_change_password ? <Profile /> : children}</Shell>;
+  return <Shell user={{ name: s.name, role_name: s.role_name, must_change_password: s.must_change_password }} nav={s.must_change_password ? [] : nav} primary={s.must_change_password ? [] : primary} titles={titles} today={today}>{s.must_change_password ? <Profile /> : children}</Shell>;
 }

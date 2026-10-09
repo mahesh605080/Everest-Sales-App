@@ -7,6 +7,7 @@ import { metres, teamScope, TODAY } from './field';
 import { can, Session } from './perm';
 import { REQ, ReqDef, RField } from './reqdefs';
 import { managerOf, notify, withPerm } from './notify';
+import { filterSql, ListFilter } from './filters';
 
 export function reqDef(key: string): ReqDef {
   const d = REQ[key]; if (!d) throw new HttpError(404, 'Unknown list.'); return d;
@@ -91,7 +92,7 @@ function selectSql(def: ReqDef) {
 }
 const mySteps = (def: ReqDef, s: Session) => def.steps.filter(st => can(s, st.perm));
 
-export async function listReq(def: ReqDef, s: Session, box: string) {
+export async function listReq(def: ReqDef, s: Session, box: string, f?: ListFilter) {
   const p: any[] = []; let w: string;
   if (box === 'mine') { p.push(s.id); w = 't.user_id=$1'; }
   else {
@@ -103,6 +104,7 @@ export async function listReq(def: ReqDef, s: Session, box: string) {
       w = parts.length ? '(' + parts.join(' or ') + ')' : 'false';
     } else w = 'true' + (all ? '' : teamScope(s, p));
   }
+  w += filterSql(p, f, { status: 't.status', text: def.fields.some(x => x.type === 'customer') ? ['u.name', 'c.name'] : ['u.name'], date: 't.day' });
   const rows = await q<any>(`${selectSql(def)} where ${w} order by t.created_at desc limit 300`, p);
   const ids = rows.map(r => r.id);
   const trails = ids.length ? await q<any>('select doc_id,user_name,action,remarks,at from approvals where doc_type=$1 and doc_id = any($2) order by at, id', [def.key, ids]) : [];
