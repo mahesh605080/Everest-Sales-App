@@ -3,6 +3,7 @@ import { HttpError } from './auth';
 import { audit } from './audit';
 import { runAlerts, teamScope, TODAY } from './field';
 import { can, Session } from './perm';
+import { pipeline } from './opps';
 
 const NP = (col: string) => `(${col} at time zone 'Asia/Kathmandu')::date`;
 const okMonth = (m: any) => typeof m === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
@@ -72,10 +73,11 @@ export async function overview(s: Session, month?: string | null) {
                                         (select count(*)::int from tour_plans tp join users u on u.id=tp.user_id where tp.status='Submitted'${sc3}) as plans`, p3);
   const p4: any[] = []; const sc4 = teamScope(s, p4);
   const alerts = await q<any>(`select a.rule,a.severity,a.message,a.at,u.name as person from alerts a left join users u on u.id=a.user_id where a.ack_at is null${sc4} order by a.at desc limit 6`, p4);
+  const pipe = await pipeline(s, info.from, info.to);
   const regions = new Map<string, { name: string; target: number; sales: number }>();
   for (const r of rows) { const k = r.region || 'No region'; const g = regions.get(k) || { name: k, target: 0, sales: 0 }; g.target += r.target; g.sales += r.sales; regions.set(k, g); }
   return { info, team: rows.length, target: rows.reduce((a, r) => a + r.target, 0), sales: rows.reduce((a, r) => a + r.sales, 0), collection: rows.reduce((a, r) => a + r.collection, 0),
-    daily, today, waiting, alerts, regions: [...regions.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    daily, today, waiting, alerts, pipeline: pipe, regions: [...regions.values()].sort((a, b) => a.name.localeCompare(b.name)),
     ranked: [...rows].sort((a, b) => b.score - a.score).map(r => ({ id: r.id, name: r.name, area: r.area, score: r.score })) };
 }
 

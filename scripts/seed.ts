@@ -31,6 +31,8 @@ const SETTINGS: [string, string, string, string][] = [
   ['incentive_pct_at_90', '0.2', 'Incentive when month sales reach 90% of target (percent of target)', '%'],
   ['incentive_pct_at_100', '0.4', 'Incentive when month sales reach 100% of target (percent of target)', '%'],
   ['visits_per_day_norm', '4', 'Visits expected per working day when there is no tour plan', 'visits'],
+  ['no_order_days', '30', 'Customer counts as "not ordering" after', 'days'],
+  ['reorder_cover_days', '15', 'Suggest a reorder when distributor stock covers fewer than', 'days'],
   ['dda_expiry_warning_days', '60', 'Warn before a customer\'s DDA licence expires', 'days'],
 ];
 

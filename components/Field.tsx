@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { call, rs, toast } from '@/lib/ui';
 import { fmtDist, fmtTime, getPos, Pos } from '@/lib/geo';
+import Opportunities from './Opportunities';
 
 export default function Field() {
   const [d, setD] = useState<any>(null); const [pos, setPos] = useState<Pos | null>(null);
@@ -81,9 +82,11 @@ export default function Field() {
           <div className="fld wide"><label htmlFor="v-remarks">Remarks * (10 characters or more)</label><input id="v-remarks" type="text" value={v.remarks} onChange={e => setV({ ...v, remarks: e.target.value })} /></div>
           <div className="fld"><label htmlFor="v-next">Next visit date</label><input id="v-next" type="date" value={v.next_visit} onChange={e => setV({ ...v, next_visit: e.target.value })} /></div>
         </div>
+        <div className="toolbar"><div className="l"><a className="btn" href={`/orders?customer=${open.customer_id}`}>Take order</a><a className="btn" href={`/orders?customer=${open.customer_id}&repeat=1`}>Repeat last order</a><a className="btn" href={`/booklets?customer=${open.customer_id}`}>Ask special rate</a><a className="btn" href="/r/collections">Record collection</a></div></div>
         <div><button className="btn primary" disabled={!!busy} onClick={() => act('vend', '/api/field/visit/end', v, () => { setV({ purpose: '', person_met: '', remarks: '', next_visit: '' }); return 'Visit saved.'; }, false)}>{busy === 'vend' ? 'Saving…' : 'Check out of visit'}</button></div>
       </section>}
 
+      <Opportunities canOrder compact />
       <section className="card">
         <div className="hd"><h2>My customers</h2><span className="sub">{pos ? `sorted by distance · GPS ±${Math.round(pos.accuracy)} m` : 'allow location to sort by distance'}</span></div>
         <div className="feed">{d.customers.map((c: any) => <div key={c.id} style={{ alignItems: 'center' }}>

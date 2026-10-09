@@ -105,6 +105,15 @@ async function main() {
   ok('dispatch', (await cc.post(`/api/orders/${o1.id}`, { action: 'dispatch', invoice_no: 'INV-TEST' })).data.status === 'Dispatched');
   ok('Credit Control can cancel an accepted booklet', (await cc.post(`/api/booklets/${big.id}`, { action: 'cancel', remarks: 'Overdue balance' })).data.status === 'Cancelled');
 
+  // selling shortcuts
+  const last = (await so.get(`/api/sales/last-order?customer=${c1.id}`)).data;
+  ok('repeat order finds the last order lines', last.order?.no === o1.no && last.items[0].product_id === ns.id && last.items[0].qty === 40, last);
+  ok("repeat order respects territory", (await so.get(`/api/sales/last-order?customer=${other.id}`)).status === 403);
+  const opp = (await so.get('/api/sales/opportunities')).data;
+  ok('opportunities list the approved rate that still has boxes to order', opp.booklets.some((b: any) => b.no === small.no && b.boxes_left === 60), opp.booklets);
+  ok('a customer who never ordered is listed as not ordering', opp.lapsed.some((c: any) => c.customer.includes('Provincial')) && !opp.lapsed.some((c: any) => c.customer_id === c1.id), opp.lapsed.map((c: any) => c.customer));
+  ok('opportunities are limited to own customers', (await so2.get('/api/sales/opportunities')).data.booklets.length === 0);
+
   // money and requests
   const col = (await so.post('/api/req/collections', { customer_id: c1.id, mode: 'Cash', amount: 50000 })).data;
   ok('manager cannot verify a collection', (await asm.post(`/api/req/collections/${col.id}`, { action: 'next' })).status === 403);
@@ -118,6 +127,9 @@ async function main() {
   ok('a manager of another area cannot approve leave', (await asm.post(`/api/req/leave/${lv.id}`, { action: 'next' })).status === 403);
   ok('samples log needs the product for a sample', (await so.post('/api/req/samples', { customer_id: c1.id, kind: 'Sample', qty: 5, given_to: 'Dr. Test' })).status === 422);
   ok('sample is recorded and visible to the manager', (await so.post('/api/req/samples', { customer_id: c1.id, kind: 'Sample', product_id: ns.id, qty: 5, given_to: 'Dr. Test' })).status === 200 && (await asm.get('/api/req/samples?box=all')).data.rows.length > 0);
+  await so.post('/api/stock', { customer_id: c1.id, items: [{ product_id: mtz.id, stock: 20, sold_30d: 200, near_expiry: 0 }, { product_id: ns.id, stock: 40, sold_30d: 300, near_expiry: 5 }] });
+  const ro = (await so.get('/api/sales/opportunities')).data.reorder;
+  ok('low stock without a recent order is suggested for reorder', ro.some((r: any) => r.product_id === mtz.id && r.cover_days === 3 && r.suggest_boxes === 180) && !ro.some((r: any) => r.product_id === ns.id), ro);
   ok('stock report saves', (await so.post('/api/stock', { customer_id: c1.id, items: [{ product_id: ns.id, stock: 40, sold_30d: 300, near_expiry: 5 }] })).status === 200);
 
   // performance
@@ -126,6 +138,7 @@ async function main() {
   ok('a sales officer sees only their own scorecard row', meRow.length === 1 && meRow[0].code === 'SO01' && meRow[0].sales >= o1.value, meRow);
   const ov = await gm.get('/api/perf?view=overview');
   ok('control room summary loads', ov.status === 200 && ov.data.sales >= o1.value && ov.data.daily.length > 0);
+  ok('sales pipeline counts the dispatched order', ov.data.pipeline.so_dispatched >= 1 && ov.data.pipeline.so_dispatched_value >= o1.value, ov.data.pipeline);
   const rep = await gm.get(`/api/reports/orders?from=${today.slice(0, 8)}01&to=${today}`);
   ok('report downloads as Excel', rep.status === 200 && (rep.data as ArrayBuffer).byteLength > 3000);
   ok('credit report is hidden from sales managers', (await gm.get('/api/reports/credit')).status === 404);

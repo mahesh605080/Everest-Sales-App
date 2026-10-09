@@ -17,7 +17,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
     <>
       <section className="card">
         <div className="hd"><div><h2 style={{ fontSize: 19 }}>{c.name}</h2><span className="code">{c.code} · {c.type} · {c.town || 'no town'}{c.area_id__label ? ` · ${c.area_id__label}` : ''}</span></div>
-          <div className="toolbar">{!c.active && <span className="pill">Inactive</span>}<span className="pill info">{c.assigned_to__label ? `Assigned to ${c.assigned_to__label}` : 'Not assigned'}</span>{c.lat != null && <Link className="btn sm" href="/map">On the map</Link>}<Link className="btn sm" href="/m/customers">All customers</Link></div></div>
+          <div className="toolbar">{!c.active && <span className="pill">Inactive</span>}<span className="pill info">{c.assigned_to__label ? `Assigned to ${c.assigned_to__label}` : 'Not assigned'}</span>{can(s, 'orders.create') && c.active && <><a className="btn sm primary" href={`/orders?customer=${c.id}`}>New order</a><a className="btn sm" href={`/orders?customer=${c.id}&repeat=1`}>Repeat last order</a><a className="btn sm" href={`/booklets?customer=${c.id}`}>Ask special rate</a></>}{c.lat != null && <Link className="btn sm" href="/map">On the map</Link>}<Link className="btn sm" href="/m/customers">All customers</Link></div></div>
         <div className="g" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10 }}>
           <div><div className="lab">Contact</div>{c.contact_person || '–'} {c.phone || ''}</div><div><div className="lab">Address</div>{c.address || '–'}</div>
           <div><div className="lab">Payment term</div>{c.payment_term_id__label || '–'}</div><div><div className="lab">PAN / VAT</div><span className="num">{c.pan_vat || '–'}</span></div>

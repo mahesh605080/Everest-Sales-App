@@ -241,3 +241,8 @@ td.num,td .num,.kv b{white-space:nowrap}td .pill{margin-left:4px}
   .sheetgrid a{display:block;padding:12px;border:1px solid var(--line);border-radius:10px;color:var(--ink);font-weight:500;text-decoration:none}
   .sheetgrid a[aria-current=page]{border-color:var(--accent2);background:var(--accent-soft);color:var(--accent)}
 }
+
+.pipe{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.pstep{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;position:relative;transition:border-color .18s,transform .18s,box-shadow .18s}
+.pstep:hover{text-decoration:none;border-color:var(--accent2);transform:translateY(-2px);box-shadow:0 8px 18px -12px rgba(28,92,171,.6)}
+@media (min-width:901px){.pstep:not(:last-child)::after{content:"→";position:absolute;right:-9px;top:50%;transform:translateY(-50%);background:var(--bg);color:var(--muted);font-weight:700;z-index:1}}

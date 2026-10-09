@@ -48,6 +48,14 @@ export default function ControlRoom() {
       <K l="Open alerts" v={d.today.alerts} c={d.today.crit ? <span className="dn">{d.today.crit} critical</span> : <Link href="/alerts">see alerts</Link>} />
       <K l="Waiting for a decision" v={waiting} c={`${w.booklets} booklets · ${w.orders} orders · ${w.expenses + w.leave + w.plans} other`} />
     </div>
+    {d.pipeline && <section className="card"><div className="hd"><h2>Sales pipeline</h2><Link className="btn sm" href="/opportunities">Sales opportunities</Link></div>
+      <div className="pipe">
+        {[['Booklets in approval', d.pipeline.bk_pending, sh(d.pipeline.bk_pending_value), '/booklets', d.pipeline.hours_to_accept != null ? `${d.pipeline.hours_to_accept} h average to accept` : ''],
+          ['Orders with Credit Control', d.pipeline.so_pending, sh(d.pipeline.so_pending_value), '/orders', d.pipeline.hours_to_approve != null ? `${d.pipeline.hours_to_approve} h average to approve` : ''],
+          ['Approved, to dispatch', d.pipeline.so_approved, sh(d.pipeline.so_approved_value), '/orders', d.pipeline.hours_to_dispatch != null ? `${d.pipeline.hours_to_dispatch} h average to dispatch` : ''],
+          ['Dispatched this month', d.pipeline.so_dispatched, sh(d.pipeline.so_dispatched_value), '/orders', d.pipeline.so_rejected ? `${d.pipeline.so_rejected} rejected this month` : '']].map((x: any, i: number) =>
+          <Link key={i} href={x[3]} className="pstep"><span className="lab">{x[0]}</span><b className="big" style={{ fontSize: 22 }}>{x[1]}</b><span className="num">{x[2]}</span><span className="sub">{x[4]}</span></Link>)}
+      </div></section>}
     <div className="g two">
       <section className="card"><div className="hd"><h2>Sales against target pace</h2><span className="sub">day {d.info.elapsed} of {d.info.days}</span></div><Trend d={d} /></section>
       <section className="card"><div className="hd"><h2>Achievement by region</h2></div>

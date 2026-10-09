@@ -91,7 +91,7 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Order print | "Print or save as PDF" on every sales order opens a clean page for the browser's print dialog |
 | Revise a booklet | A sent-back booklet has a Revise button that reopens it with its lines filled in; submitting creates a new booklet number |
 | Scheduled alerts | `GET /api/cron/alerts?key=CRON_SECRET` runs the rules without anyone logged in. Point any scheduler at it every 5 minutes |
-| Smoke test | `npm run smoke` runs 67 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
+| Smoke test | `npm run smoke` runs 74 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
 | Free local testing | `docker-compose.local.yml` and `LOCAL-TESTING.md` run everything on one computer with sample data |
 
 | Notifications | A bell in the top bar: approvers are told when a booklet, order, expense, claim, leave or tour plan is waiting for them, and the creator is told about every decision. Click a line to open the page |
@@ -100,6 +100,20 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Credit Control home | Their dashboard opens with orders to approve, dispatch, collections to verify, items to pay or settle, instruments expiring, total outstanding and a warning when the outstanding upload is stale |
 | Targets by Excel | On the scorecard page: download the month's targets sheet, fill it, upload it. Unknown codes and bad amounts are listed |
 | Session security | A temporary password blocks every screen and API except changing it. Changing or resetting a password, or deactivating a person, signs out all their other sessions |
+
+## Selling faster
+
+The system's first job is to get more orders in with less effort. These screens are built for that.
+
+| Area | What works now |
+| --- | --- |
+| Sales opportunities | One page (and the top three on My day) listing: approved booklet rates that still have boxes to order, with value and days left; distributors whose latest stock report shows fewer days of cover than the setting, with a suggested quantity; customers with no order in the set number of days, biggest buyers first. Every line has a button that opens the order form already filled in |
+| Repeat last order | On the order form, the customer page, an open visit and the opportunities list: fills the order with the lines of the customer's last order at today's standard rates |
+| Order in one tap from a booklet | An accepted booklet shows "Create order", which opens the order with the customer, booklet and remaining quantities filled in |
+| During a visit | The open visit has Take order, Repeat last order, Ask special rate and Record collection |
+| Sales pipeline | On the control room: booklets in approval, orders with Credit Control, approved to dispatch, dispatched this month, each with count, value and the average hours the step takes |
+
+`no_order_days` and `reorder_cover_days` are in Settings.
 
 ## Experience upgrades
 
@@ -226,6 +240,7 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 | `GET /api/stock?customer=`, `GET /api/stock`, `POST /api/stock` | Distributor stock: last report for a customer, latest view, save today's report |
 | `GET /api/perf?month=`, `GET /api/perf?view=overview`, `PUT /api/targets`, `GET /api/reports/{key}?from=&to=&month=` | Scorecard rows, control-room summary, set targets, download a report |
 | `GET /api/notifications`, `POST /api/notifications` (`{id}` or `{id:"all"}`) | Bell: unread count and latest 30, mark read |
+| `GET /api/sales/opportunities`, `GET /api/sales/last-order?customer=` | The selling list; the lines of a customer's last order |
 | `GET /api/alerts?open=1`, `POST /api/alerts/ack`, `GET/PUT /api/alerts/rules` | Alerts |
 
 ## How the code is organised

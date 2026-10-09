@@ -29,6 +29,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'alerts.view')) field.push({ href: '/alerts', label: 'Alerts' });
   overview.push({ href: '/notices', label: 'Notices' });
   const sales = [] as { href: string; label: string }[];
+  if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/opportunities', label: 'Sales opportunities' });
   if (can(s, 'booklets.create') || can(s, 'booklets.approve') || can(s, 'sales.view')) sales.push({ href: '/booklets', label: 'Booklets' });
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/orders', label: 'Sales orders' });
   if (can(s, 'credit.manage') || can(s, 'dispatch.manage')) sales.push({ href: '/credit', label: 'Credit control' });
@@ -55,6 +56,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/scorecard': ['Targets and scorecard', 'Month target, achievement, score and incentive for every field person'],
     '/reports': ['Reports', 'Excel downloads for monitoring, sales, money and people'],
     '/customers': ['Customer', 'Everything about one customer in one place'],
+    '/opportunities': ['Sales opportunities', 'Approved rates not yet ordered, customers who stopped ordering, distributors running low'],
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],
@@ -67,7 +69,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const have = new Set(nav.flatMap(g => g.items.map(i => i.href)));
   const order: [string, string][] = can(s, 'scorecard.view') ? [['/dashboard', 'Home'], ['/team', 'Team'], ['/booklets', 'Approvals'], ['/alerts', 'Alerts'], ['/map', 'Map']]
     : can(s, 'credit.manage') ? [['/dashboard', 'Home'], ['/credit', 'Credit'], ['/r/collections', 'Collections'], ['/reports', 'Reports']]
-      : can(s, 'field.use') ? [['/field', 'My day'], ['/m/customers', 'Customers'], ['/orders', 'Orders'], ['/booklets', 'Booklets'], ['/dashboard', 'Home']]
+      : can(s, 'field.use') ? [['/field', 'My day'], ['/opportunities', 'To sell'], ['/orders', 'Orders'], ['/booklets', 'Booklets'], ['/dashboard', 'Home']]
         : [['/dashboard', 'Home'], ['/m/employees', 'Employees'], ['/roles', 'Roles'], ['/audit', 'Audit']];
   const primary = order.filter(([h]) => have.has(h)).slice(0, 4).map(([href, label]) => ({ href, label }));
   const ad = (await q1<any>(`select ${TODAY}::text d`))!.d as string;
