@@ -62,14 +62,14 @@ ADMIN ko pehli baar login par password badalna padega (tab tak koi aur screen na
 
 Alag-alag role ke liye alag browser ya "Incognito/Private window" use karo, taki ek saath do log login rah saken.
 
-1. **SO01**: "My day" → selfie + projection → Start day → kisi customer par Check in → purpose/remarks → Check out.
-2. **ASM01**: "Team today" me SO01 dikhega; "Alerts" me flag dikhenge.
+1. **SO01**: "My visits" → kisi customer par Check in → "Take order" ya "Repeat last order" → purpose/remarks → Check out. "Sales opportunities" bhi dekho.
+2. **ASM01**: "Team visits" me SO01 dikhega; "Day on map" se uska rasta; "Alerts" me flag dikhenge.
 3. **CC01**: "Credit control" → "Outstanding upload" → template download karo, 2-3 customer ke aankde bharo, upload karo.
 4. **SO01**: "Booklets" → New booklet → base rate se kam rate dalo → Submit.
 5. **ASM01 / RSM01 / GM01**: "Booklets" → To approve → Approve (kitna neeche rate hai us hisab se kahan tak jayega).
 6. **SO01**: "Sales orders" → New sales order → approved booklet chuno → Submit.
 7. **CC01**: "Credit control" → Order queue → Approve → "Dispatch" → Excel download → Mark dispatched.
-8. **SO01**: "Collections", "Expenses", "Leave" me ek-ek entry.
+8. **SO01**: "Collections" aur "Claims" me ek-ek entry.
 9. **GM01**: Dashboard (control room), "Targets and scorecard" me target dalo, "Reports" se Excel nikalo.
 10. **ADMIN**: "Roles and permissions", "Settings", "Audit log".
 

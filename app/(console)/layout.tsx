@@ -23,9 +23,9 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'settings.manage')) admin.push({ href: '/settings', label: 'Settings' });
   if (can(s, 'audit.view')) admin.push({ href: '/audit', label: 'Audit log' });
   const field = [] as { href: string; label: string }[];
-  if (can(s, 'field.use')) field.push({ href: '/field', label: 'My day' });
+  if (can(s, 'field.use')) field.push({ href: '/field', label: 'My visits' });
   if (can(s, 'plan.use') || can(s, 'plan.approve')) field.push({ href: '/plan', label: 'Tour plan' });
-  if (can(s, 'team.view')) field.push({ href: '/team', label: 'Team today' }, { href: '/visits', label: 'Visit report' });
+  if (can(s, 'team.view')) field.push({ href: '/team', label: 'Team visits' }, { href: '/visits', label: 'Visit report' });
   if (can(s, 'alerts.view')) field.push({ href: '/alerts', label: 'Alerts' });
   overview.push({ href: '/notices', label: 'Notices' });
   const sales = [] as { href: string; label: string }[];
@@ -43,9 +43,9 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const titles: Record<string, [string, string]> = {
     '/dashboard': [can(s, 'scorecard.view') ? 'Control room' : 'Dashboard', can(s, 'scorecard.view') ? 'Sales, field activity, alerts and decisions waiting, for your territory' : 'Your customers and quick links'],
     '/map': ['Map', 'Customers and the last known position of the field team'],
-    '/location': ['Share my location', 'Send your position to the control room while you are on duty'],
-    '/field': ['My day', 'Attendance, customer visits and today\'s numbers'],
-    '/team': ['Team today', 'Who is on duty, where, and what they have done'],
+    '/location': ['Share my location', 'Send your position to the control room while this page is open'],
+    '/field': ['My visits', 'Check in at a customer, take the order, and see who to sell to today'],
+    '/team': ['Team visits', 'Who has visited whom today, and which visits were away from the customer'],
     '/visits': ['Visit report', 'Every customer visit with time, distance and remarks'],
     '/alerts': ['Alerts', 'What the system caught on its own, and the rules behind it'],
     '/plan': ['Tour plan', 'Plan next month\'s visits, get them approved, and compare with what was done'],
@@ -69,7 +69,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const have = new Set(nav.flatMap(g => g.items.map(i => i.href)));
   const order: [string, string][] = can(s, 'scorecard.view') ? [['/dashboard', 'Home'], ['/team', 'Team'], ['/booklets', 'Approvals'], ['/alerts', 'Alerts'], ['/map', 'Map']]
     : can(s, 'credit.manage') ? [['/dashboard', 'Home'], ['/credit', 'Credit'], ['/r/collections', 'Collections'], ['/reports', 'Reports']]
-      : can(s, 'field.use') ? [['/field', 'My day'], ['/opportunities', 'To sell'], ['/orders', 'Orders'], ['/booklets', 'Booklets'], ['/dashboard', 'Home']]
+      : can(s, 'field.use') ? [['/field', 'Visits'], ['/opportunities', 'To sell'], ['/orders', 'Orders'], ['/booklets', 'Booklets'], ['/dashboard', 'Home']]
         : [['/dashboard', 'Home'], ['/m/employees', 'Employees'], ['/roles', 'Roles'], ['/audit', 'Audit']];
   const primary = order.filter(([h]) => have.has(h)).slice(0, 4).map(([href, label]) => ({ href, label }));
   const ad = (await q1<any>(`select ${TODAY}::text d`))!.d as string;

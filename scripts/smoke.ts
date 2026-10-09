@@ -2,7 +2,7 @@
  * End-to-end check of the main flows over the real HTTP API.
  * Needs a running app on a database freshly loaded with `npm run seed -- --sample`:
  *   BASE_URL=http://localhost:3000 npm run smoke
- * It creates real records (attendance, a booklet, an order ...), so point it at a test database, never at live data.
+ * It creates real records (visits, a booklet, an order ...), so point it at a test database, never at live data.
  */
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const PW = process.env.DEFAULT_USER_PASSWORD || 'Everest@123';
@@ -43,13 +43,9 @@ async function main() {
   const prods = (await so.get('/api/m/products?size=500')).data.rows, ns = prods.find((p: any) => p.code === 'NS500');
   ok('sample data is present', c1 && other && ns);
 
-  // field day
+  // customer visits (no day check-in is needed)
   const here = { lat: c1.lat + 0.0001, lng: c1.lng + 0.0001, accuracy: 10 };
-  const img = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/9oACAEBAAA/APv8/9k=';
-  ok('visit before check-in is refused', (await so.post('/api/field/visit/start', { customer_id: c1.id, ...here })).status === 409);
-  ok('check-in without selfie is refused', (await so.post('/api/field/checkin', { projection: 100000, ...here })).status === 422);
-  ok('check-in', (await so.post('/api/field/checkin', { projection: 100000, photo: img, ...here })).status === 200);
-  ok('second check-in is refused', (await so.post('/api/field/checkin', { projection: 1, photo: img, ...here })).status === 409);
+  ok('visit without a location is refused', (await so.post('/api/field/visit/start', { customer_id: c1.id })).status === 422);
   ok("another officer's customer is refused", (await so.post('/api/field/visit/start', { customer_id: other.id, ...here })).status === 403);
   const v = await so.post('/api/field/visit/start', { customer_id: c1.id, ...here });
   ok('visit inside geo-fence is not flagged', v.status === 200 && v.data.visit.out_of_fence === false, v.data);
@@ -59,7 +55,7 @@ async function main() {
   ok('visit outside geo-fence is flagged', far.data.visit?.out_of_fence === true, far.data);
   await so.post('/api/field/visit/end', { purpose: 'Courtesy', remarks: 'Second visit of the day' });
   const team = (await asm.get('/api/team/today')).data.people;
-  ok('manager sees the officer on duty with a flagged visit', team.some((p: any) => p.code === 'SO01' && p.in_at && p.flagged === 1), team.map((p: any) => p.code));
+  ok('manager sees the officer\'s visits with one flagged', team.some((p: any) => p.code === 'SO01' && p.visits === 2 && p.flagged === 1), team.map((p: any) => p.code));
   ok('geo-fence alert reaches the manager', (await asm.get('/api/alerts')).data.alerts.some((a: any) => a.rule === 'geofence'));
 
   // credit data
@@ -119,12 +115,7 @@ async function main() {
   ok('manager cannot verify a collection', (await asm.post(`/api/req/collections/${col.id}`, { action: 'next' })).status === 403);
   ok('Credit Control verifies the collection', (await cc.post(`/api/req/collections/${col.id}`, { action: 'next' })).data.status === 'Verified');
   const today = (await so.get('/api/perf')).data.info.today;
-  const ex = (await so.post('/api/req/expenses', { day: today, route: 'Test route', km_claimed: 400, da: 500 })).data;
-  ok('expense far above GPS distance is flagged', ex.over_gps === true, ex);
-  ok('one expense claim per day', (await so.post('/api/req/expenses', { day: today, route: 'Again', km_claimed: 5 })).status === 409);
-  ok('manager approves, accounts pays', (await asm.post(`/api/req/expenses/${ex.id}`, { action: 'next' })).data.status === 'Approved' && (await cc.post(`/api/req/expenses/${ex.id}`, { action: 'next' })).data.status === 'Paid');
-  const lv = (await so2.post('/api/req/leave', { from_date: today, to_date: today, type: 'Casual', remarks: 'Family function' })).data;
-  ok('a manager of another area cannot approve leave', (await asm.post(`/api/req/leave/${lv.id}`, { action: 'next' })).status === 403);
+  ok('removed screens are gone', (await so.get('/api/req/expenses')).status === 404 && (await so.get('/api/req/leave')).status === 404 && (await so.post('/api/field/checkin', {})).status === 404);
   ok('samples log needs the product for a sample', (await so.post('/api/req/samples', { customer_id: c1.id, kind: 'Sample', qty: 5, given_to: 'Dr. Test' })).status === 422);
   ok('sample is recorded and visible to the manager', (await so.post('/api/req/samples', { customer_id: c1.id, kind: 'Sample', product_id: ns.id, qty: 5, given_to: 'Dr. Test' })).status === 200 && (await asm.get('/api/req/samples?box=all')).data.rows.length > 0);
   await so.post('/api/stock', { customer_id: c1.id, items: [{ product_id: mtz.id, stock: 20, sold_30d: 200, near_expiry: 0 }, { product_id: ns.id, stock: 40, sold_30d: 300, near_expiry: 5 }] });
@@ -142,7 +133,6 @@ async function main() {
   const rep = await gm.get(`/api/reports/orders?from=${today.slice(0, 8)}01&to=${today}`);
   ok('report downloads as Excel', rep.status === 200 && (rep.data as ArrayBuffer).byteLength > 3000);
   ok('credit report is hidden from sales managers', (await gm.get('/api/reports/credit')).status === 404);
-  ok('end of day', (await so.post('/api/field/checkout', { actual: 95000, ...here })).status === 200);
 
   // two orders racing for the last boxes of a booklet: only one may win
   const race = (await so.post('/api/booklets', { customer_id: c1.id, due_date: due, items: [{ product_id: ns.id, qty: 10, ask_rate: ns.trade_rate * 0.99, remarks: 'Race test' }] })).data;

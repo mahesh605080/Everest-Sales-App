@@ -16,6 +16,6 @@ export default function MyScore() {
       <div><div className="lab">Pace today</div><div className="num">{pace}%</div></div>
       <div><div className="lab">Collection</div><div className="num">{rs(r.collection)}</div></div>
       <div><div className="lab">Visits</div><div className="num">{r.visits}{r.planned ? ` · ${r.planned_done}/${r.planned} planned` : ''}</div></div>
-      <div><div className="lab">Days present · late</div><div className="num">{r.days_present} · {r.days_late}</div></div></div>
-    <p className="sub">Score parts: visits {r.parts.visits}, sales {r.parts.sales}, collection {r.parts.collection}, discipline {r.parts.discipline} (each out of 100).</p></section>;
+      <div><div className="lab">Days with visits</div><div className="num">{r.days_present}</div></div></div>
+    <p className="sub">Score parts: visits {r.parts.visits}, sales {r.parts.sales}, collection {r.parts.collection}, visit quality {r.parts.discipline} (each out of 100).</p></section>;
 }

@@ -61,7 +61,6 @@ export async function creditSummary() {
     `select (select count(*)::int from sales_orders where status='Pending') as queue,
             (select count(*)::int from sales_orders where status='Approved') as to_dispatch,
             (select count(*)::int from collections where status='Submitted') as collections,
-            (select count(*)::int from expenses where status='Approved') as expenses,
             (select count(*)::int from claims where status='Approved') as claims,
             (select count(*)::int from financial_instruments where status='Active' and expiry_date < ${TODAY}) as inst_expired,
             (select count(*)::int from financial_instruments where status='Active' and expiry_date between ${TODAY} and ${TODAY} + 30) as inst_expiring,

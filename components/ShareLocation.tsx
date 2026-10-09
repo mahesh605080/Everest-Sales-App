@@ -31,7 +31,7 @@ export default function ShareLocation() {
   return (
     <section className="card" style={{ maxWidth: 520 }}>
       <div className="hd"><h2>Location sharing</h2>{on ? <span className="pill good">On</span> : <span className="pill">Off</span>}</div>
-      <p className="sub">While this is on, your position is sent to the control room about every 30 seconds. Keep this page open and the screen on. Background tracking with the screen off comes with the Android app in Phase 2.</p>
+      <p className="sub">While this is on, your position is sent to the control room about every 30 seconds. Keep this page open and the screen on.</p>
       {err && <div className="errbox" role="alert">{err}</div>}{msg && !err && <div className="okbox">{msg}</div>}
       <div>{on ? <button className="btn danger" onClick={stop}>Stop sharing</button> : <button className="btn primary" onClick={start}>Start sharing</button>}</div>
       {last && <div className="g" style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 }}>

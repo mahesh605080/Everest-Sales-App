@@ -1,4 +1,6 @@
-# Everest SFA — Phases 1 to 5 (web)
+# Everest SFA (web)
+
+> **Scope note.** Attendance, selfie check-in, leave and expense claims were built in earlier phases and then removed on request: this system is for orders, booklets and the sales process. Sections below that mention them describe history; migration `011` drops their tables. Customer visits remain and need no day check-in.
 
 Sales force monitoring and control system for Everest Parenterals Pvt. Ltd.
 This is Phase 1: the foundation that every later phase builds on.
@@ -91,7 +93,7 @@ Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, di
 | Order print | "Print or save as PDF" on every sales order opens a clean page for the browser's print dialog |
 | Revise a booklet | A sent-back booklet has a Revise button that reopens it with its lines filled in; submitting creates a new booklet number |
 | Scheduled alerts | `GET /api/cron/alerts?key=CRON_SECRET` runs the rules without anyone logged in. Point any scheduler at it every 5 minutes |
-| Smoke test | `npm run smoke` runs 74 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
+| Smoke test | `npm run smoke` runs 67 checks of the main flows over the real API against a fresh sample database (see `scripts/smoke.ts`) |
 | Free local testing | `docker-compose.local.yml` and `LOCAL-TESTING.md` run everything on one computer with sample data |
 
 | Notifications | A bell in the top bar: approvers are told when a booklet, order, expense, claim, leave or tour plan is waiting for them, and the creator is told about every decision. Click a line to open the page |

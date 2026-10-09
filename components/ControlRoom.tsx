@@ -37,16 +37,16 @@ export default function ControlRoom() {
   if (err) return <div className="errbox" role="alert">{err}</div>;
   if (!d) return <section className="card"><p className="sub">Loading the control room…</p></section>;
   const ach = d.target > 0 ? d.sales / d.target : null, pace = d.info.pace, gap = ach == null ? null : Math.round((ach - pace) * 100);
-  const w = d.waiting, waiting = w.booklets + w.orders + w.expenses + w.leave + w.plans, mx = Math.max(pace, ...d.regions.map((r: any) => r.target > 0 ? r.sales / r.target : 0)) * 1.25 || 1;
+  const w = d.waiting, waiting = w.booklets + w.orders + w.claims + w.plans, mx = Math.max(pace, ...d.regions.map((r: any) => r.target > 0 ? r.sales / r.target : 0)) * 1.25 || 1;
   const K = ({ l, v, c }: any) => <div className="card"><div className="lab">{l}</div><div className="big">{v}</div><div className="ctx">{c}</div></div>;
   return <>
     <div className="g kpi">
       <K l="Month sales" v={sh(d.sales)} c={ach == null ? 'no targets set' : <>{Math.round(ach * 100)}% of {sh(d.target)} · <span className={gap! >= 0 ? 'up' : 'dn'}>{gap! >= 0 ? '+' : ''}{gap} pts vs pace</span></>} />
-      <K l="On duty today" v={`${d.today.present} / ${d.team}`} c={<Link href="/team">open Team today</Link>} />
+      <K l="Visiting today" v={`${d.today.present} / ${d.team}`} c={<Link href="/team">open Team visits</Link>} />
       <K l="Visits today" v={d.today.visits} c={<Link href="/visits">visit report</Link>} />
       <K l="Collection" v={sh(d.collection)} c="recorded this month" />
       <K l="Open alerts" v={d.today.alerts} c={d.today.crit ? <span className="dn">{d.today.crit} critical</span> : <Link href="/alerts">see alerts</Link>} />
-      <K l="Waiting for a decision" v={waiting} c={`${w.booklets} booklets · ${w.orders} orders · ${w.expenses + w.leave + w.plans} other`} />
+      <K l="Waiting for a decision" v={waiting} c={`${w.booklets} booklets · ${w.orders} orders · ${w.claims + w.plans} other`} />
     </div>
     {d.pipeline && <section className="card"><div className="hd"><h2>Sales pipeline</h2><Link className="btn sm" href="/opportunities">Sales opportunities</Link></div>
       <div className="pipe">

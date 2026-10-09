@@ -7,19 +7,12 @@ import { fmtDist, fmtTime, nptToday } from '@/lib/geo';
 
 type Cust = { id: number; code: string; name: string; type: string; town: string; lat: number; lng: number; assigned: string | null };
 const COLORS: Record<string, string> = { Distributor: '#1C5CAB', Hospital: '#0CA30C', Institution: '#4A3AA7', Retailer: '#EB6834' };
-const STATUS: Record<string, { color: string; pill: string }> = {
-  'On visit': { color: '#0CA30C', pill: 'good' }, 'In the field': { color: '#2A78D6', pill: 'info' }, 'No visit for 2h+': { color: '#FAB219', pill: 'warn' },
-  'Day closed': { color: '#7A8799', pill: '' }, 'Not checked in': { color: '#D03B3B', pill: 'crit' }, 'On leave': { color: '#7A8799', pill: '' } };
+const STATUS: Record<string, { color: string; pill: string }> = { 'On visit': { color: '#0CA30C', pill: 'good' }, 'Visited today': { color: '#2A78D6', pill: 'info' }, 'No visit yet': { color: '#FAB219', pill: 'warn' } };
 // OpenStreetMap raster tiles: works without a key. For production traffic use a provider style URL (see README).
 const OSM: any = { version: 8, sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }] };
 const esc = (s: any) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const ago = (at: string) => { const m = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 60000)); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`; };
-export function statusOf(p: any): string {
-  if (!p.in_at) return p.on_leave ? 'On leave' : 'Not checked in';
-  if (p.out_at) return 'Day closed';
-  if (p.at_customer) return 'On visit';
-  return Date.now() - Date.parse(p.last_visit_at || p.in_at) > 2 * 3600000 ? 'No visit for 2h+' : 'In the field';
-}
+export function statusOf(p: any): string { return p.at_customer ? 'On visit' : p.visits > 0 ? 'Visited today' : 'No visit yet'; }
 
 export default function MapView({ canTrack, canTeam, styleUrl }: { canTrack: boolean; canTeam: boolean; styleUrl: string }) {
   const box = useRef<HTMLDivElement>(null), map = useRef<maplibregl.Map | null>(null), ready = useRef(false);
@@ -53,7 +46,7 @@ export default function MapView({ canTrack, canTeam, styleUrl }: { canTrack: boo
   useEffect(() => { call('/api/map/customers').then(r => setCust(r.customers)).catch(e => setErr(e.message)); }, []);
   useEffect(() => {
     if (!canTrack && !canTeam) return;
-    const load = () => (canTeam ? call('/api/team/today').then(r => setPeople(r.people)) : call('/api/track/latest').then(r => setPeople(r.people.map((p: any) => ({ ...p, in_at: p.at, last_ping: p.at }))))).catch(() => {});
+    const load = () => (canTeam ? call('/api/team/today').then(r => setPeople(r.people)) : call('/api/track/latest').then(r => setPeople(r.people.map((p: any) => ({ ...p, last_ping: p.at }))))).catch(() => {});
     load(); const t = setInterval(load, 20000); return () => clearInterval(t);
   }, [canTrack, canTeam]);
 
@@ -72,7 +65,7 @@ export default function MapView({ canTrack, canTeam, styleUrl }: { canTrack: boo
     const m = map.current; if (!m) return;
     peopleMarkers.current.forEach(x => x.remove());
     peopleMarkers.current = team.filter(p => p.lat != null && p.lng != null).map(p => {
-      const st = canTeam ? statusOf(p) : 'In the field', el = document.createElement('div'); el.className = 'mk person'; el.style.background = STATUS[st].color; el.title = `${p.name}: ${st}`;
+      const st = canTeam ? statusOf(p) : 'Visited today', el = document.createElement('div'); el.className = 'mk person'; el.style.background = STATUS[st].color; el.title = `${p.name}: ${st}`;
       el.addEventListener('click', () => { if (canTeam) setSel(p.id); });
       return new maplibregl.Marker({ element: el }).setLngLat([p.lng, p.lat])
         .setPopup(new maplibregl.Popup({ offset: 14 }).setHTML(`<b>${esc(p.name)}</b><br>${esc(st)}${p.at_customer ? ': ' + esc(p.at_customer) : ''}<br>Seen ${esc(ago(p.last_ping))}${p.accuracy ? ` · ±${Math.round(p.accuracy)} m` : ''}`)).addTo(m);
@@ -126,20 +119,18 @@ export default function MapView({ canTrack, canTeam, styleUrl }: { canTrack: boo
             <label className="user" htmlFor="map-day">Day <input id="map-day" type="date" value={day} max={nptToday()} onChange={e => e.target.value && setDay(e.target.value)} /></label>
             <div className="g" style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 }}>
               <div><div className="lab">Visits</div><div className="num">{trail.visits.length}</div></div><div><div className="lab">GPS distance</div><div className="num">{trail.km} km</div></div><div><div className="lab">Long stops</div><div className="num">{trail.stops.length}</div></div></div>
-            {!trail.attendance ? <p className="sub">No check-in on this day.</p> : <ol className="tl">
-              <li><time>{fmtTime(trail.attendance.in_at)}</time><div><b>Day check-in</b>{trail.attendance.late && <span className="pill warn" style={{ marginLeft: 6 }}>Late</span>}<br /><span className="sub">Projection Rs {Math.round(trail.attendance.projection).toLocaleString('en-IN')}</span></div></li>
+            {!trail.visits.length ? <p className="sub">No customer visit on this day.</p> : <ol className="tl">
               {trail.visits.map((v: any, i: number) => <li key={v.id} className={v.out_of_fence ? 'flag' : ''}><time>{fmtTime(v.in_at)}</time><div><b>{i + 1}. {v.customer}</b>{v.out_at ? ` · ${Math.max(1, Math.round((Date.parse(v.out_at) - Date.parse(v.in_at)) / 60000))} min` : ' · in progress'}<br />
                 <span className="sub">{v.out_of_fence ? `${fmtDist(v.distance_m)} from the saved location · ` : ''}{v.purpose || ''}{v.remarks ? ` · ${v.remarks}` : ''}</span></div></li>)}
-              {trail.attendance.out_at && <li><time>{fmtTime(trail.attendance.out_at)}</time><div><b>{trail.attendance.auto_closed ? 'Closed automatically at midnight' : 'Day check-out'}</b>{trail.attendance.actual != null && <><br /><span className="sub">Actual Rs {Math.round(trail.attendance.actual).toLocaleString('en-IN')}</span></>}</div></li>}
             </ol>}
-            {trail.points.length < 2 && trail.attendance && <p className="sub">Too few location points to draw a path. In the browser app points are saved only while the page is open.</p>}
+            {trail.points.length < 2 && trail.visits.length > 0 && <p className="sub">Too few location points to draw a path. In the browser app points are saved only while the page is open.</p>}
           </div>}
         </div>
       </section>
       {(canTeam || canTrack) && <section className="card"><div className="hd"><h2>Team</h2><span className="sub">refreshes every 20 seconds{canTeam ? ' · click a person for their day on the map' : ''}</span></div>
-        <div className="tbl"><table><thead><tr><th>Person</th><th>Area</th><th>Status</th><th>Check-in</th><th className="r">Visits</th><th>Last seen</th><th></th></tr></thead>
-          <tbody>{team.map(p => { const st = canTeam ? statusOf(p) : 'In the field'; return <tr key={p.id} style={sel === p.id ? { background: 'var(--accent-soft)' } : undefined}><td><b>{p.name}</b> <span className="code">{p.code}</span></td><td>{p.area || p.region || '–'}</td>
-            <td><span className={`pill ${STATUS[st].pill}`}>{st}{p.at_customer ? `: ${p.at_customer}` : ''}</span></td><td className="num">{canTeam ? fmtTime(p.in_at) : '–'}</td><td className="r num">{p.visits ?? '–'}</td>
+        <div className="tbl"><table><thead><tr><th>Person</th><th>Area</th><th>Status</th><th>First visit</th><th className="r">Visits</th><th>Last seen</th><th></th></tr></thead>
+          <tbody>{team.map(p => { const st = canTeam ? statusOf(p) : 'Visited today'; return <tr key={p.id} style={sel === p.id ? { background: 'var(--accent-soft)' } : undefined}><td><b>{p.name}</b> <span className="code">{p.code}</span></td><td>{p.area || p.region || '–'}</td>
+            <td><span className={`pill ${STATUS[st].pill}`}>{st}{p.at_customer ? `: ${p.at_customer}` : ''}</span></td><td className="num">{canTeam ? fmtTime(p.first_visit_at) : '–'}</td><td className="r num">{p.visits ?? '–'}</td>
             <td>{p.last_ping ? <span className={`pill ${Date.now() - Date.parse(p.last_ping) < 10 * 60000 ? 'good' : 'warn'}`}>{ago(p.last_ping)}</span> : <span className="code">–</span>}</td>
             <td style={{ whiteSpace: 'nowrap' }}>{canTeam && <button className="btn sm primary" onClick={() => { setSel(p.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Day on map</button>} {p.lat != null && <button className="btn sm" onClick={() => fly(p.lng, p.lat)}>Find</button>}</td></tr>; })}
             {!team.length && <tr><td colSpan={7}><p className="sub" style={{ padding: '10px 0' }}>Nobody to show yet.</p></td></tr>}</tbody></table></div></section>}

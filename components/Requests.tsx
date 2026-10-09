@@ -29,7 +29,7 @@ const LABELS: Record<string, string> = { item: 'Item',  km_gps: 'GPS distance (k
 function fmt(def: ReqDef, k: string, v: any) {
   if (v == null || v === '') return null;
   const f = def.fields.find(x => x.key === k);
-  if (f?.type === 'money' || k === 'ta') return Number(v) ? rs(v) : null;
+  if (f?.type === 'money') return Number(v) ? rs(v) : null;
   return String(v);
 }
 
@@ -42,7 +42,7 @@ function NewForm({ def, onDone }: { def: ReqDef; onDone: () => void }) {
   }, [def]);
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setErr('');
-    try { const r = await call(`/api/req/${def.key}`, { method: 'POST', json: v }); toast(r.over_gps ? 'Submitted. Note: the km is above your GPS distance, so your manager will see a flag.' : `${def.one[0].toUpperCase() + def.one.slice(1)} submitted.`); onDone(); }
+    try { const r = await call(`/api/req/${def.key}`, { method: 'POST', json: v }); toast(`${def.one[0].toUpperCase() + def.one.slice(1)} ${def.steps.length ? 'submitted' : 'saved'}.`); onDone(); }
     catch (x: any) { setErr(x.message); } finally { setBusy(false); }
   }
   const input = (f: RField) => { const id = `rq-${f.key}`, set = (x: any) => setV(o => ({ ...o, [f.key]: x }));
@@ -50,7 +50,7 @@ function NewForm({ def, onDone }: { def: ReqDef; onDone: () => void }) {
     if (f.type === 'product') return <select id={id} value={v[f.key]} onChange={e => set(e.target.value)}><option value="">None</option>{prods.map(p => <option key={p.id} value={p.id}>{p.name} {p.pack_size || ''} ({p.code})</option>)}</select>;
     if (f.type === 'select') return <select id={id} value={v[f.key]} onChange={e => set(e.target.value)}><option value="">Select…</option>{f.options!.map(o => <option key={o}>{o}</option>)}</select>;
     if (f.type === 'photo') return <PhotoInput id={id} value={v[f.key] || null} onChange={set} />;
-    return <input id={id} value={v[f.key]} onChange={e => set(e.target.value)} type={f.type === 'date' ? 'date' : f.type === 'text' ? 'text' : 'number'} min={f.type === 'text' || f.type === 'date' ? undefined : 0} step={f.type === 'money' ? '0.01' : f.type === 'km' ? '0.1' : undefined} max={f.type === 'date' && f.key === 'day' ? nptToday() : undefined} />; };
+    return <input id={id} value={v[f.key]} onChange={e => set(e.target.value)} type={f.type === 'date' ? 'date' : f.type === 'text' ? 'text' : 'number'} min={f.type === 'text' || f.type === 'date' ? undefined : 0} step={f.type === 'money' ? '0.01' : undefined} max={f.type === 'date' && f.key === 'day' ? nptToday() : undefined} />; };
   return <form className="card" onSubmit={submit}><h2>New {def.one}</h2>
     <div className="form">{def.fields.map(f => <div key={f.key} className={`fld ${f.wide || f.type === 'photo' ? 'wide' : ''}`}><label htmlFor={`rq-${f.key}`}>{f.label}{f.required ? ' *' : ''}</label>{input(f)}{f.help && <small>{f.help}</small>}</div>)}</div>
     {err && <div className="errbox" role="alert">{err}</div>}
@@ -64,7 +64,7 @@ export default function Requests({ def, canCreate, canDecide, hasInbox = true }:
   const load = useCallback(() => call(`/api/req/${def.key}?box=${box}${filterQuery(flt)}`).then(r => { setRows(r.rows); setErr(''); }).catch(e => setErr(e.message)), [def.key, box, flt]);
   useEffect(() => { setRows(null); load(); }, [load]);
   async function act(id: number, action: string) { setErr(''); try { const r = await call(`/api/req/${def.key}/${id}`, { method: 'POST', json: { action, remarks: rm[id] || '' } }); toast(r.message); load(); } catch (e: any) { setErr(e.message); } }
-  const amount = (r: any) => r.amount ?? r.total;
+  const amount = (r: any) => r.amount;
   return <>
     <section className="card"><div className="toolbar"><div className="l">{boxes.map(b => <button key={b[0]} className={`btn ${box === b[0] ? 'primary' : ''}`} onClick={() => { setBox(b[0]); setFlt(noFilter); }}>{b[1]}</button>)}</div>
       <div className="r">{canCreate && !adding && <button className="btn primary" onClick={() => setAdding(true)}>New {def.one}</button>}</div></div>
@@ -73,8 +73,8 @@ export default function Requests({ def, canCreate, canDecide, hasInbox = true }:
     {err && <div className="errbox" role="alert">{err}</div>}
     {(rows || []).map(r => <section className="card" key={r.id}>
       <div className="hd"><div><h2>{r.customer || r.person}</h2><span className="code">{r.customer ? `${r.person} · ` : ''}{r.day}{r.area ? ` · ${r.area}` : ''}</span></div>
-        <div className="toolbar">{r.over_gps && <span className="pill crit">{Math.round((r.km_claimed - r.km_gps) * 10) / 10} km above GPS</span>}{def.key === 'expenses' && r.km_gps == null && <span className="pill">No GPS data for that day</span>}
-          {r.status !== 'Recorded' && <span className={`pill ${ST[r.status] || (r.status === 'Submitted' ? 'warn' : ['Verified', 'Paid', 'Settled'].includes(r.status) ? 'info' : '')}`}>{r.status}</span>}{amount(r) != null && <b className="num">{rs(amount(r))}</b>}</div></div>
+        <div className="toolbar">
+          {r.status !== 'Recorded' && <span className={`pill ${ST[r.status] || (r.status === 'Submitted' ? 'warn' : ['Verified', 'Settled'].includes(r.status) ? 'info' : '')}`}>{r.status}</span>}{amount(r) != null && <b className="num">{rs(amount(r))}</b>}</div></div>
       <div className="g" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>{def.show.map(k => { const val = fmt(def, k, r[k]); return val == null ? null : <div key={k}><div className="lab">{def.fields.find(f => f.key === k)?.label || LABELS[k] || k}</div><span className={/^[\d.]+$|^Rs /.test(val) ? 'num' : undefined}>{val}</span></div>; })}
         {r.photo_id && <div><div className="lab">Photo</div><a href={`/api/photo/${r.photo_id}`} target="_blank" rel="noreferrer"><img src={`/api/photo/${r.photo_id}`} alt="Attached proof" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} /></a></div>}</div>
       {r.remarks && <p className="sub">{r.remarks}</p>}

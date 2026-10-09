@@ -3,7 +3,7 @@ import { HttpError } from './auth';
 import { audit } from './audit';
 import { listRows } from './crud';
 import { ENT } from './entities';
-import { metres, teamScope, TODAY } from './field';
+import { teamScope, TODAY } from './field';
 import { can, Session } from './perm';
 import { REQ, ReqDef, RField } from './reqdefs';
 import { managerOf, notify, withPerm } from './notify';
@@ -18,21 +18,14 @@ const isDate = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v
 
 function coerce(f: RField, raw: any) {
   const empty = raw === undefined || raw === null || String(raw).trim() === '';
-  if (empty) { if (f.required) throw new HttpError(422, `${f.label} is required.`); return ['money', 'km'].includes(f.type) ? 0 : null; }
+  if (empty) { if (f.required) throw new HttpError(422, `${f.label} is required.`); return f.type === 'money' ? 0 : null; }
   switch (f.type) {
     case 'text': return String(raw).trim().slice(0, 500);
-    case 'money': case 'km': { const n = Number(raw); if (!Number.isFinite(n) || n < 0) throw new HttpError(422, `${f.label} must be a number, zero or more.`); return f.type === 'km' ? Math.round(n * 10) / 10 : round(n); }
+    case 'money': { const n = Number(raw); if (!Number.isFinite(n) || n < 0) throw new HttpError(422, `${f.label} must be a number, zero or more.`); return round(n); }
     case 'int': case 'customer': case 'product': case 'photo': { const n = Number(raw); if (!Number.isInteger(n) || n <= 0) throw new HttpError(422, `${f.label} is not valid.`); return n; }
     case 'date': if (!isDate(raw)) throw new HttpError(422, `${f.label} must be a date.`); return raw;
     case 'select': if (!f.options!.includes(raw)) throw new HttpError(422, `Choose ${f.label.toLowerCase()}.`); return raw;
   }
-}
-
-/** GPS distance for one person on one day: the path through that day's location points, ignoring very inaccurate fixes. */
-export async function gpsKm(userId: number, day: string) {
-  const pts = await q<any>(`select lat,lng from location_pings where user_id=$1 and (at at time zone 'Asia/Kathmandu')::date=$2::date and coalesce(accuracy,0) <= 200 order by at`, [userId, day]);
-  let m = 0; for (let i = 1; i < pts.length; i++) { const d = metres(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng); if (d >= 30) m += d; }
-  return { km: Math.round(m / 100) / 10, points: pts.length };
 }
 
 export async function createReq(def: ReqDef, s: Session, body: any, ip: string | null) {
@@ -42,7 +35,6 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
   if (v.customer_id) { const c = (await listRows(ENT.customers, s, { id: v.customer_id })).rows[0]; if (!c || !c.active) throw new HttpError(403, 'This customer is not in your territory.'); }
   if (v.product_id && !(await q1('select 1 from products where id=$1 and active', [v.product_id]))) throw new HttpError(422, 'Choose a product from the list.');
   if (v.photo_id && !(await q1('select 1 from photos where id=$1 and user_id=$2', [v.photo_id, s.id]))) throw new HttpError(422, 'The photo could not be found. Attach it again.');
-  let alert: string | null = null;
 
   if (def.key === 'collections') {
     if (v.amount <= 0) throw new HttpError(422, 'Amount must be more than zero.');
@@ -52,37 +44,13 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
   if (def.key === 'samples') { if (v.kind === 'Sample' ? !v.product_id : !v.item) throw new HttpError(422, v.kind === 'Sample' ? 'Choose the product that was sampled.' : 'Say what item was given.'); v.day = today; }
   if (def.key === 'competitor') v.day = today;
   if (def.key === 'claims') { if (v.amount <= 0) throw new HttpError(422, 'Claim amount must be more than zero.'); v.day = today; }
-  if (def.key === 'expenses') {
-    if (v.day > today) throw new HttpError(422, 'The travel date cannot be in the future.');
-    if (Date.parse(today) - Date.parse(v.day) > 45 * 864e5) throw new HttpError(422, 'Claims older than 45 days cannot be entered.');
-    if (await q1(`select 1 from expenses where user_id=$1 and day=$2 and status <> 'Rejected'`, [s.id, v.day])) throw new HttpError(409, 'You already have a claim for that date.');
-    const daLimit = await setting('da_daily_limit', 800);
-    if (v.da > daLimit) throw new HttpError(422, `Daily allowance cannot be more than Rs ${daLimit}.`);
-    if (v.other > 0 && !v.other_note) throw new HttpError(422, 'Say what the other amount is for.');
-    const g = await gpsKm(s.id, v.day), tol = await setting('km_tolerance_pct', 15);
-    v.km_gps = g.points >= 2 ? g.km : null;
-    v.over_gps = g.points >= 2 && v.km_claimed > g.km * (1 + tol / 100) + 2;
-    v.ta = round(v.km_claimed * (await setting('ta_rate_per_km', 10)));
-    v.total = round(v.ta + v.da + v.lodging + v.other);
-    if (v.total <= 0) throw new HttpError(422, 'The claim has no amount.');
-    if (v.over_gps) alert = `Claimed ${v.km_claimed} km on ${v.day}; GPS shows ${g.km} km.`;
-  }
-  if (def.key === 'leave') {
-    if (v.to_date < v.from_date) throw new HttpError(422, 'The "to" date is before the "from" date.');
-    v.days = Math.round((Date.parse(v.to_date) - Date.parse(v.from_date)) / 864e5) + 1;
-    if (v.days > 60) throw new HttpError(422, 'A single request can cover at most 60 days.');
-    if (await q1(`select 1 from leaves where user_id=$1 and status <> 'Rejected' and from_date <= $3 and to_date >= $2`, [s.id, v.from_date, v.to_date])) throw new HttpError(409, 'You already have leave covering some of these dates.');
-    v.day = today;
-  }
   const keys = Object.keys(v);
   const row = await q1<any>(`insert into ${def.table}(user_id,${keys.map(k => `"${k}"`).join(',')}) values($1,${keys.map((_, i) => '$' + (i + 2)).join(',')}) returning id`, [s.id, ...keys.map(k => v[k])]);
   await q('insert into approvals(doc_type,doc_id,user_id,user_name,action) values($1,$2,$3,$4,$5)', [def.key, row!.id, s.id, s.name, def.steps.length ? 'Submitted' : 'Recorded']);
-  if (alert && (await q1<any>(`select enabled from alert_rules where key='expense_gps'`))?.enabled)
-    await q(`insert into alerts(rule,severity,user_id,message,day,key) values('expense_gps','warn',$1,$2,${TODAY},$3) on conflict(key) do nothing`, [s.id, alert, `expense_gps:${row!.id}`]);
   await audit(s, 'create', def.key, row!.id, null, v, ip);
   const first = def.steps[0];
-  if (first) await notify(first.scope === 'team' ? [await managerOf(s.id)] : await withPerm(first.perm), `New ${def.one} from ${s.name}`, v.total != null ? `Rs ${v.total}` : v.amount != null ? `Rs ${v.amount}` : null, `/r/${def.key}`);
-  return { id: row!.id, over_gps: !!v.over_gps, total: v.total };
+  if (first) await notify(first.scope === 'team' ? [await managerOf(s.id)] : await withPerm(first.perm), `New ${def.one} from ${s.name}`, v.amount != null ? `Rs ${v.amount}` : null, `/r/${def.key}`);
+  return { id: row!.id };
 }
 
 function selectSql(def: ReqDef) {

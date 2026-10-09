@@ -17,7 +17,7 @@ export default function CreditHome() {
       <K l="Orders to approve" v={d.queue} c={<Link href="/credit">open the queue</Link>} />
       <K l="Waiting for dispatch" v={d.to_dispatch} c="approved, not yet dispatched" />
       <K l="Collections to verify" v={d.collections} c={<Link href="/r/collections">open collections</Link>} />
-      <K l="To pay or settle" v={d.expenses + d.claims} c={`${d.expenses} expenses · ${d.claims} claims`} />
+      <K l="Claims to settle" v={d.claims} c={<Link href="/r/claims">open claims</Link>} />
       <K l="Instruments" v={d.inst_expired + d.inst_expiring} bad={d.inst_expired > 0} c={`${d.inst_expired} expired · ${d.inst_expiring} within 30 days`} />
       <K l="Outstanding" v={sh(d.outstanding)} c={<>{sh(d.over90)} over 90 days · {d.near_limit} customers above 80% of limit</>} />
     </div>

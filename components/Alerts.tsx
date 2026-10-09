@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { call, toast } from '@/lib/ui';
 import { fmtTime } from '@/lib/geo';
 
-const NAMES: Record<string, string> = { no_checkin: 'Attendance', idle: 'Idle', geofence: 'Location', missed_checkout: 'Check-out', coverage: 'Coverage', approval_wait: 'Approval', instrument_expiry: 'Credit', expense_gps: 'Expense', approval_escalation: 'Escalation' };
+const NAMES: Record<string, string> = { geofence: 'Location', coverage: 'Coverage', approval_wait: 'Approval', instrument_expiry: 'Credit', approval_escalation: 'Escalation' };
 
 export default function Alerts({ canManage }: { canManage: boolean }) {
   const [open, setOpen] = useState(true); const [rows, setRows] = useState<any[] | null>(null); const [rules, setRules] = useState<any[]>([]); const [err, setErr] = useState('');
@@ -25,14 +25,13 @@ export default function Alerts({ canManage }: { canManage: boolean }) {
           <div className="t"><b>{a.person || 'System'}</b> <span className={`pill ${a.severity === 'crit' ? 'crit' : a.severity === 'warn' ? 'warn' : 'info'}`}>{NAMES[a.rule] || a.rule}</span>{a.area ? <span className="code"> {a.area}</span> : null}<br />{a.message}
             {a.ack_at && <><br /><span className="code">acknowledged by {a.ack_by || '–'} at {fmtTime(a.ack_at)}</span></>}</div>
           <time>{a.day.slice(5)} {fmtTime(a.at)}</time>{open && <button className="btn sm" onClick={() => ack(a.id)}>Acknowledge</button>}</div>)}
-          {rows && !rows.length && <p className="sub">{open ? 'Nothing is open. The rules below are checked every minute while anyone has this page or Team today open.' : 'Nothing acknowledged in the last 14 days.'}</p>}
+          {rows && !rows.length && <p className="sub">{open ? 'Nothing is open. The rules below are checked every minute while anyone has this page open.' : 'Nothing acknowledged in the last 14 days.'}</p>}
           {!rows && !err && <p className="sub">Loading…</p>}</div>
       </section>
       <section className="card"><div className="hd"><h2>Rules</h2><span className="sub">{canManage ? 'changes are saved at once and written to the audit log' : 'only roles with "Change alert rules" can edit'}</span></div>
         <div>{rules.map(r => <div className="rule" key={r.key}><div className="t"><label htmlFor={`ar-${r.key}`}><b>{r.label}</b></label></div>
           {r.threshold != null ? <><input id={`ar-${r.key}`} type="number" min={0} defaultValue={r.threshold} disabled={!canManage} onBlur={e => Number(e.target.value) !== Number(r.threshold) && saveRule(r, { threshold: e.target.value })} /><span className="code" style={{ minWidth: 56 }}>{r.unit}</span></> : <span className="code">on detection</span>}
           <label className="sw"><input type="checkbox" id={`ar-on-${r.key}`} checked={r.enabled} disabled={!canManage} aria-label={`Enable: ${r.label}`} onChange={e => saveRule(r, { enabled: e.target.checked })} /><span /></label></div>)}</div>
-        <p className="sub">Saturday is treated as the weekly holiday for the check-in rule.</p>
       </section>
     </>
   );
