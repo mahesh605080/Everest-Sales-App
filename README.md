@@ -1,4 +1,4 @@
-# Everest SFA — Phases 1 to 4 (web)
+# Everest SFA — Phases 1 to 5 (web)
 
 Sales force monitoring and control system for Everest Parenterals Pvt. Ltd.
 This is Phase 1: the foundation that every later phase builds on.
@@ -69,7 +69,20 @@ Collections, expenses, claims and leave share one engine (`lib/reqdefs.ts` descr
 
 GPS distance for an expense day uses the location points the app recorded that day. With the browser-only app those points exist only while the page was open, so a low GPS figure is a prompt to ask, not proof; the Android app's background tracking will make it reliable.
 
-Not built yet: sample and gift issue, competitor information, targets, incentive, scorecard, the report library. They are listed in the left menu under "Coming next".
+## What Phase 5 adds
+
+| Area | What works now |
+| --- | --- |
+| Targets | GM or Admin sets a monthly rupee target per field person on the scorecard page; every change is in the audit log |
+| Control room | For managers the dashboard opens with month sales against target pace, on duty, visits, collection, open alerts and decisions waiting, a cumulative sales chart, achievement by region, latest alerts and top/bottom scores, all limited to their territory |
+| Scorecard | Per person: target, approved sales, achievement against pace, collection, visits, days present and late, score out of 100 and incentive. Sortable; the score parts show on hover |
+| Incentive | Percent of target at 90% and at 100% achievement, set in Settings; projected from pace during the month |
+| My month | A field user sees their own target, sales, score and its parts on the dashboard |
+| Reports | 20 Excel reports: attendance, visits, out-of-location, coverage, tour plan vs actual, target and scorecard, order register, product-wise and customer-wise sales, booklet register, rate variance, distributor stock, credit exposure, instrument expiry, collections, expenses vs GPS, claims, leave, alert log, audit log |
+
+Score weights are fixed in `lib/perf.ts`: visits 30, sales 35, collection 20, discipline 15. "Approved sales" counts orders approved by Credit Control in the month, by the date of approval.
+
+Not built yet: the Android/iOS app (background tracking, mock-location detection, push), sample and gift issue, competitor information, a printable order PDF, SMS notifications, BS dates.
 
 ## Run it on your own computer (for a developer)
 
@@ -167,6 +180,7 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 | `GET /api/req/{type}?box=mine|inbox|all`, `POST /api/req/{type}`, `POST /api/req/{type}/{id}` | `collections`, `expenses`, `claims`, `leave`: list, create, act (`next`, `reject`, `withdraw`) |
 | `POST /api/photo`, `GET /api/photo/{id}` | Upload a proof photo (JPEG data URL) and read it back |
 | `GET /api/stock?customer=`, `GET /api/stock`, `POST /api/stock` | Distributor stock: last report for a customer, latest view, save today's report |
+| `GET /api/perf?month=`, `GET /api/perf?view=overview`, `PUT /api/targets`, `GET /api/reports/{key}?from=&to=&month=` | Scorecard rows, control-room summary, set targets, download a report |
 | `GET /api/alerts?open=1`, `POST /api/alerts/ack`, `GET/PUT /api/alerts/rules` | Alerts |
 
 ## How the code is organised

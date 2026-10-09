@@ -31,9 +31,12 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'tenders.view')) sales.push({ href: '/m/tenders', label: 'Tenders' });
   const money = Object.values(REQ).filter(d => can(s, d.create) || d.steps.some(st => can(s, st.perm))).map(d => ({ href: `/r/${d.key}`, label: d.label }));
   if (can(s, 'stock.report') || can(s, 'stock.view')) money.push({ href: '/stock', label: 'Distributor stock' });
-  const nav = [{ group: 'Overview', items: overview }, { group: 'Field', items: field }, { group: 'Sales', items: sales }, { group: 'Money and requests', items: money }, { group: 'Masters', items: masters }, { group: 'Administration', items: admin }].filter(g => g.items.length);
+  const perf = [] as { href: string; label: string }[];
+  if (can(s, 'scorecard.view') || can(s, 'targets.manage')) perf.push({ href: '/scorecard', label: 'Targets and scorecard' });
+  if (can(s, 'reports.run')) perf.push({ href: '/reports', label: 'Reports' });
+  const nav = [{ group: 'Overview', items: overview }, { group: 'Field', items: field }, { group: 'Sales', items: sales }, { group: 'Money and requests', items: money }, { group: 'Performance', items: perf }, { group: 'Masters', items: masters }, { group: 'Administration', items: admin }].filter(g => g.items.length);
   const titles: Record<string, [string, string]> = {
-    '/dashboard': ['Dashboard', 'Master data health and recent changes'],
+    '/dashboard': [can(s, 'scorecard.view') ? 'Control room' : 'Dashboard', can(s, 'scorecard.view') ? 'Sales, field activity, alerts and decisions waiting, for your territory' : 'Your customers and quick links'],
     '/map': ['Map', 'Customers and the last known position of the field team'],
     '/location': ['Share my location', 'Send your position to the control room while you are on duty'],
     '/field': ['My day', 'Attendance, customer visits and today\'s numbers'],
@@ -45,6 +48,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/booklets': ['Booklets', 'Special rate and scheme requests, with multi-level approval'],
     '/orders': ['Sales orders', 'Orders sent to Credit Control, with the credit check result'],
     '/credit': ['Credit control', 'Order approval, limits, instruments, outstanding upload and dispatch'],
+    '/scorecard': ['Targets and scorecard', 'Month target, achievement, score and incentive for every field person'],
+    '/reports': ['Reports', 'Excel downloads for monitoring, sales, money and people'],
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],

@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import ControlRoom from '@/components/ControlRoom';
+import MyScore from '@/components/MyScore';
 import { getSession } from '@/lib/auth';
 import { listRows } from '@/lib/crud';
 import { q, q1 } from '@/lib/db';
@@ -40,6 +42,9 @@ export default async function Dashboard() {
 
   return (
     <>
+      {can(s, 'scorecard.view') && <ControlRoom />}
+      {!can(s, 'scorecard.view') && can(s, 'field.use') && <MyScore />}
+      {can(s, 'scorecard.view') && <h2 style={{ marginTop: 8 }}>Master data health</h2>}
       <div className="g kpi">
         <KPI l={company ? 'Customers' : 'My customers'} v={cust.length} c={`${unassigned.length} not assigned to anyone`} />
         {company && <KPI l="Active employees" v={emp.reduce((a: number, x: any) => a + x.n, 0)} c={`${emp.find((x: any) => x.name === 'Sales Officer')?.n || 0} sales officers`} />}

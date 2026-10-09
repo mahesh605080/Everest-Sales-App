@@ -6,7 +6,7 @@ import { call, initials } from '@/lib/ui';
 
 type Item = { href: string; label: string };
 type Group = { group: string; items: Item[] };
-const SOON = [['Android app, background tracking', 'Phase 2'], ['Targets, scorecard, reports', 'Phase 5']];
+const SOON = [['Android and iOS app', 'Next'], ['Samples, competitor info', 'Next'], ['Order PDF, SMS and push', 'Next']];
 
 export default function Shell({ user, nav, titles, children }: { user: { name: string; role_name: string; must_change_password: boolean }; nav: Group[]; titles: Record<string, [string, string]>; children: React.ReactNode }) {
   const path = usePathname();

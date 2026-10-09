@@ -7,11 +7,11 @@ import { pool, q, q1 } from '../lib/db';
 import { ALL_PERMS } from '../lib/perm';
 
 const views = ALL_PERMS.filter(p => p.endsWith('.view'));
-const mgr = ['expenses.approve', 'leave.approve', 'tenders.edit'];
+const mgr = ['expenses.approve', 'leave.approve', 'tenders.edit', 'reports.run', 'scorecard.view'];
 const ROLES: [string, string, number, string[]][] = [
   ['admin', 'Admin', 5, ALL_PERMS],
-  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage', 'booklets.approve', ...mgr, 'claims.approve']],
-  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run', 'sales.view', 'credit.manage', 'dispatch.manage', 'alerts.view', 'collections.verify', 'expenses.pay', 'claims.settle', 'stock.view', 'tenders.view']],
+  ['gm', 'General Manager', 4, [...views, 'export.run', 'plan.approve', 'notices.manage', 'booklets.approve', ...mgr, 'claims.approve', 'targets.manage']],
+  ['cc', 'Credit Control', 4, ['customers.view', 'customers.edit', 'terms.view', 'products.view', 'employees.view', 'areas.view', 'regions.view', 'map.view', 'export.run', 'sales.view', 'credit.manage', 'dispatch.manage', 'alerts.view', 'collections.verify', 'expenses.pay', 'claims.settle', 'stock.view', 'tenders.view', 'reports.run']],
   ['rsm', 'Regional Sales Manager', 3, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'regions.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.approve', 'booklets.approve', 'sales.view', ...mgr, 'claims.approve', 'expenses.create', 'leave.apply', 'stock.view', 'tenders.view']],
   ['asm', 'Area Sales Manager', 2, ['employees.view', 'customers.view', 'products.view', 'terms.view', 'areas.view', 'map.view', 'track.view', 'track.send', 'export.run', 'field.use', 'team.view', 'alerts.view', 'plan.use', 'plan.approve', 'booklets.create', 'booklets.approve', 'orders.create', 'sales.view', ...mgr, 'collections.create', 'claims.create', 'stock.report', 'expenses.create', 'leave.apply', 'stock.view', 'tenders.view']],
   ['so', 'Sales Officer', 1, ['customers.view', 'products.view', 'terms.view', 'map.view', 'track.send', 'field.use', 'plan.use', 'booklets.create', 'orders.create', 'collections.create', 'claims.create', 'stock.report', 'expenses.create', 'leave.apply', 'tenders.view']],
@@ -28,6 +28,9 @@ const SETTINGS: [string, string, string, string][] = [
   ['ta_rate_per_km', '10', 'Travel allowance per km', 'Rs'],
   ['da_daily_limit', '800', 'Daily allowance limit', 'Rs'],
   ['km_tolerance_pct', '15', 'Claimed km may exceed GPS km by', '%'],
+  ['incentive_pct_at_90', '0.2', 'Incentive when month sales reach 90% of target (percent of target)', '%'],
+  ['incentive_pct_at_100', '0.4', 'Incentive when month sales reach 100% of target (percent of target)', '%'],
+  ['visits_per_day_norm', '4', 'Visits expected per working day when there is no tour plan', 'visits'],
   ['dda_expiry_warning_days', '60', 'Warn before a customer\'s DDA licence expires', 'days'],
 ];
 

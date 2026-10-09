@@ -9,6 +9,7 @@ export const PERM_GROUPS: { group: string; perms: { key: string; label: string }
   { group: 'Collections, expenses, claims, leave', perms: [{ key: 'collections.create', label: 'Record collections' }, { key: 'collections.verify', label: 'Verify collections' }, { key: 'expenses.create', label: 'Claim expenses' }, { key: 'expenses.approve', label: 'Approve team expenses' }, { key: 'expenses.pay', label: 'Mark expenses paid' },
     { key: 'claims.create', label: 'Raise claims' }, { key: 'claims.approve', label: 'Approve claims' }, { key: 'claims.settle', label: 'Settle claims' }, { key: 'leave.apply', label: 'Apply for leave' }, { key: 'leave.approve', label: 'Approve team leave' }] },
   { group: 'Distributor stock', perms: [{ key: 'stock.report', label: 'Report distributor stock' }, { key: 'stock.view', label: 'See stock reports' }] },
+  { group: 'Performance', perms: [{ key: 'targets.manage', label: 'Set monthly targets' }, { key: 'scorecard.view', label: 'Control room and scorecard' }, { key: 'reports.run', label: 'Download reports' }] },
   { group: 'Administration', perms: [{ key: 'roles.manage', label: 'Roles and permissions' }, { key: 'settings.manage', label: 'Settings' }, { key: 'audit.view', label: 'Audit log' }] },
 ];
 export const ALL_PERMS = PERM_GROUPS.flatMap(g => g.perms.map(p => p.key));
