@@ -43,10 +43,12 @@ function NewBooklet({ onDone, fromId, initCustomer }: { onDone: () => void; from
   useEffect(() => { if (!fromId) return; call(`/api/booklets/${fromId}`).then(r => { setCust(String(r.booklet.customer_id)); setRemarks(r.booklet.remarks || '');
     setLines(r.items.map((i: any) => ({ product_id: String(i.product_id), qty: String(i.qty), ask_rate: String(i.ask_rate), bonus_buy: i.bonus_buy ? String(i.bonus_buy) : '', bonus_free: i.bonus_free ? String(i.bonus_free) : '', discount_pct: i.discount_pct ? String(i.discount_pct) : '', remarks: i.remarks || '' }))); }).catch(e => setErr(e.message)); }, [fromId]);
   useEffect(() => { if (initCustomer && custs.length && !cust) setCust(initCustomer); }, [initCustomer, custs]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setCredit(null); if (cust) call(`/api/credit?customer=${cust}`).then(r => setCredit(r.credit)).catch(() => {}); }, [cust]);
+  const [rates, setRates] = useState<any>({});
+  useEffect(() => { setCredit(null); setRates({}); if (cust) { call(`/api/credit?customer=${cust}`).then(r => setCredit(r.credit)).catch(() => {}); call(`/api/pricing?customer=${cust}`).then(r => setRates(r.rates)).catch(() => {}); } }, [cust]);
+  const base = (pid: string) => rates[pid]?.rate ?? P.get(pid)?.trade_rate;
   const P = useMemo(() => new Map(prods.map(p => [String(p.id), p])), [prods]);
-  const set = (i: number, k: string, v: string) => setLines(ls => ls.map((l, j) => j !== i ? l : { ...l, [k]: v, ...(k === 'product_id' ? { ask_rate: String(P.get(v)?.trade_rate ?? '') } : {}) }));
-  const vari = (l: any) => { const b = P.get(l.product_id)?.trade_rate; return b ? (b - net(l)) / b * 100 : 0; };
+  const set = (i: number, k: string, v: string) => setLines(ls => ls.map((l, j) => j !== i ? l : { ...l, [k]: v, ...(k === 'product_id' ? { ask_rate: String(base(v) ?? '') } : {}) }));
+  const vari = (l: any) => { const b = base(l.product_id); return b ? (b - net(l)) / b * 100 : 0; };
   const maxV = Math.max(0, ...lines.filter(l => l.product_id).map(vari)), final = maxV <= bands.a ? 'ASM' : maxV <= bands.r ? 'RSM' : 'GM';
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setErr(''); if (!cust) { setErr('Choose a customer.'); return; }
@@ -64,7 +66,7 @@ function NewBooklet({ onDone, fromId, initCustomer }: { onDone: () => void; from
       {lines.map((l, i) => { const p = P.get(l.product_id), v = vari(l); return <div key={i} style={{ background: 'var(--canvas)', borderRadius: 10, padding: 12, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', alignItems: 'end' }}>
         <div className="fld" style={{ gridColumn: 'span 2' }}><label htmlFor={`bl${i}-p`}>Product *</label><select id={`bl${i}-p`} value={l.product_id} onChange={e => set(i, 'product_id', e.target.value)}><option value="">Select…</option>{prods.map(x => <option key={x.id} value={x.id}>{x.name} {x.pack_size || ''} ({x.code})</option>)}</select></div>
         <div className="fld"><label htmlFor={`bl${i}-q`}>Boxes *</label><input id={`bl${i}-q`} type="number" min={1} value={l.qty} onChange={e => set(i, 'qty', e.target.value)} /></div>
-        <div className="fld"><label htmlFor={`bl${i}-a`}>Ask rate{p ? ` (base ${p.trade_rate})` : ''} *</label><input id={`bl${i}-a`} type="number" step="0.01" min={0} value={l.ask_rate} onChange={e => set(i, 'ask_rate', e.target.value)} /></div>
+        <div className="fld"><label htmlFor={`bl${i}-a`}>Ask rate{p ? ` (base ${base(l.product_id)}${rates[l.product_id] ? ', price list' : ''})` : ''} *</label><input id={`bl${i}-a`} type="number" step="0.01" min={0} value={l.ask_rate} onChange={e => set(i, 'ask_rate', e.target.value)} /></div>
         <div className="fld"><label htmlFor={`bl${i}-b`}>Bonus: buy</label><input id={`bl${i}-b`} type="number" min={0} value={l.bonus_buy} onChange={e => set(i, 'bonus_buy', e.target.value)} /></div>
         <div className="fld"><label htmlFor={`bl${i}-f`}>Bonus: free</label><input id={`bl${i}-f`} type="number" min={0} value={l.bonus_free} onChange={e => set(i, 'bonus_free', e.target.value)} /></div>
         <div className="fld"><label htmlFor={`bl${i}-d`}>Discount %</label><input id={`bl${i}-d`} type="number" min={0} step="0.1" value={l.discount_pct} onChange={e => set(i, 'discount_pct', e.target.value)} /></div>

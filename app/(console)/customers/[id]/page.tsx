@@ -27,6 +27,16 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <K l="Sales, 12 months" v={rs(d.totals.sales_12m)} sub="approved orders" /><K l="Collected, 12 months" v={rs(d.totals.collected_12m)} sub="verified collections" />
         <K l="Visits, 90 days" v={d.totals.visits_90d} sub={d.totals.last_visit ? `last on ${d.totals.last_visit}` : 'never visited'} /><K l="Available credit" v={rs(d.credit.available)} sub={`limit ${rs(d.credit.credit_limit)}`} />
       </div>
+      <section className="card">
+        <div className="hd"><div><h2>Selling to this customer</h2><span className="sub">class by 12-month sales, what it can still return, its rates and the schemes running today</span></div>
+          <div className="toolbar"><span className={`pill ${d.selling.cls === 'A' ? 'good' : d.selling.cls === 'B' ? 'info' : ''}`}>Class {d.selling.cls} · visit every {d.selling.norm_days} days</span></div></div>
+        <div className="g" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14 }}>
+          <div><div className="lab">Expiry returns allowance</div><b className="num">{rs(d.selling.allowance.left)}</b> left<br /><span className="sub">{rs(d.selling.allowance.returned)} returned of {rs(d.selling.allowance.allowed)} allowed ({d.selling.allowance.cap_pct}% of 12-month purchases)</span></div>
+          {d.selling.rebate && <div><div className="lab">Yearly rebate</div>{d.selling.rebate.pct ? <b className="num">{d.selling.rebate.pct}% earned</b> : <span>no slab reached yet</span>}<br /><span className="sub">{rs(d.selling.rebate.bought)} bought this fiscal year{d.selling.rebate.gap != null ? ` · ${rs(d.selling.rebate.gap)} more for ${d.selling.rebate.next_pct}%` : ' · top slab reached'}</span></div>}
+          <div><div className="lab">Own rates</div>{d.selling.rates.length ? d.selling.rates.map((r: any, i: number) => <div key={i}>{r.product}: <b className="num">{Number(r.rate).toFixed(2)}</b> <span className="code">{r.source === 'customer' ? 'contract' : 'price list'} · trade {r.trade_rate}</span></div>) : <span className="sub">Buys at the trade rate.</span>}</div>
+          <div><div className="lab">Schemes running</div>{d.selling.schemes.length ? d.selling.schemes.map((x: any) => <div key={x.code}>{x.product}: <span className="pill good">{x.text}</span> <span className="code">from {x.min_qty} boxes · to {x.valid_to}</span></div>) : <span className="sub">No scheme is running for this customer.</span>}</div>
+        </div>
+      </section>
       <section className="card"><h2>Credit position</h2><CreditBox c={d.credit} /></section>
       <div className="g two">
         <section className="card"><h2>Sales orders</h2>{d.orders.length ? <div className="tbl"><table><thead><tr><th>Order</th><th>Date</th><th>By</th><th className="r">Value</th><th>Status</th></tr></thead>

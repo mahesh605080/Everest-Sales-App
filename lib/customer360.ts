@@ -4,6 +4,10 @@ import { listRows } from './crud';
 import { ENT } from './entities';
 import { creditSnapshot } from './sales';
 import { Session } from './perm';
+import { customerClasses } from './opps';
+import { pricingFor } from './pricing';
+import { returnAllowance } from './returns';
+import { fyStart } from './bs';
 
 /** One customer, everything: who looks after them, credit, and the latest activity of every kind. */
 export async function customer360(s: Session, id: number) {
@@ -23,5 +27,17 @@ export async function customer360(s: Session, id: number) {
               (select coalesce(sum(value),0) from sales_orders where customer_id=$1 and status in ('Approved','Dispatched') and order_date > current_date - 365) as sales_12m,
               (select coalesce(sum(amount),0) from collections where customer_id=$1 and status='Verified' and day > current_date - 365) as collected_12m`, [id]),
   ]);
-  return { customer: c, credit, visits, booklets, orders, collections, claims, stock, history, totals: totals[0] };
+  // What a salesperson needs before walking in: how important the customer is, what it can still return, its rates and running schemes.
+  const cls = (await customerClasses()).map.get(id)?.cls ?? 'C', normDays = Number((await q<any>('select value from settings where key=$1', [`visit_days_${cls.toLowerCase()}`]))[0]?.value ?? 30);
+  const pricing = await pricingFor(c), allowance = await returnAllowance(id);
+  const names = new Map((await q<any>('select id, name, trade_rate from products')).map(p => [p.id, p]));
+  const today = (await q<any>(`select (now() at time zone 'Asia/Kathmandu')::date::text d`))[0].d as string;
+  const slabs = c.type === 'Distributor' ? (await q<any>('select from_value, pct from rebate_slabs where active order by from_value')).map(x => ({ from: Number(x.from_value), pct: Number(x.pct) })) : [];
+  const fyBought = Number((await q<any>(`select coalesce(sum(value),0) v from sales_orders where customer_id=$1 and status in ('Approved','Dispatched') and order_date >= $2::date`, [id, fyStart(today)]))[0].v);
+  const cur = [...slabs].reverse().find(x => fyBought >= x.from), next = slabs.find(x => x.from > fyBought);
+  const selling = { cls, norm_days: normDays, allowance,
+    rates: Object.entries(pricing.rates).map(([pid, r]: any) => ({ product: names.get(Number(pid))?.name, trade_rate: names.get(Number(pid))?.trade_rate, rate: r.rate, source: r.source })),
+    schemes: pricing.schemes.filter((x: any) => (pricing.rates as any)[x.product_id]?.source !== 'customer').map((x: any) => ({ code: x.code, product: names.get(x.product_id)?.name, text: x.text, min_qty: x.min_qty, valid_to: x.valid_to })),
+    rebate: slabs.length ? { bought: fyBought, pct: cur?.pct ?? 0, next_from: next?.from ?? null, next_pct: next?.pct ?? null, gap: next ? next.from - fyBought : null } : null };
+  return { customer: c, credit, visits, booklets, orders, collections, claims, stock, history, totals: totals[0], selling };
 }

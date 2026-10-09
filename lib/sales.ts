@@ -165,11 +165,12 @@ export async function createBooklet(s: Session, body: any, ip: string | null) {
   const lines: any[] = Array.isArray(body.items) ? body.items : [];
   if (!lines.length) throw new HttpError(422, 'Add at least one product.');
   if (lines.length > 50) throw new HttpError(422, 'A booklet can have at most 50 products.');
-  const items: any[] = [], seen = new Set<number>();
+  const items: any[] = [], seen = new Set<number>(), list = await pricesFor(cust);
   for (const [n, l] of lines.entries()) {
     const at = `Line ${n + 1}: `, p = await q1<any>('select * from products where id=$1 and active', [Number(l.product_id)]);
     if (!p) throw new HttpError(422, at + 'choose a product.');
     if (seen.has(p.id)) throw new HttpError(422, at + `${p.name} is on the booklet twice.`); seen.add(p.id);
+    const base = list.get(p.id)?.rate ?? p.trade_rate; // the customer's own price list is the base, not the general trade rate
     const qty = Number(l.qty), ask = Number(l.ask_rate), buy = Number(l.bonus_buy) || 0, free = Number(l.bonus_free) || 0, disc = Number(l.discount_pct) || 0;
     if (!Number.isInteger(qty) || qty <= 0) throw new HttpError(422, at + 'boxes must be a whole number above zero.');
     if (!Number.isFinite(ask) || ask <= 0) throw new HttpError(422, at + 'ask rate must be above zero.');
@@ -177,10 +178,10 @@ export async function createBooklet(s: Session, body: any, ip: string | null) {
     if (disc < 0 || disc >= 100) throw new HttpError(422, at + 'discount must be between 0 and 99.99%.');
     if (p.mrp > 0 && ask > p.mrp) throw new HttpError(422, at + `ask rate ${ask} is above the MRP of ${p.mrp}.`);
     if (p.trade_rate <= 0) throw new HttpError(422, at + `${p.name} has no trade rate in the product master.`);
-    const net = ask * (1 - disc / 100) * (free > 0 ? buy / (buy + free) : 1), variance = (p.trade_rate - net) / p.trade_rate * 100;
+    const net = ask * (1 - disc / 100) * (free > 0 ? buy / (buy + free) : 1), variance = (base - net) / base * 100;
     const remarks = String(l.remarks || '').trim();
     if (variance > 0.005 && !remarks) throw new HttpError(422, at + 'give a reason for a rate below the base rate.');
-    items.push({ p, qty, ask: round(ask), buy, free, disc: round(disc), net: round(net, 4), variance: round(variance), remarks });
+    items.push({ p, base, qty, ask: round(ask), buy, free, disc: round(disc), net: round(net, 4), variance: round(variance), remarks });
   }
   const maxVar = Math.max(...items.map(i => i.variance));
   const bandA = await setting('booklet_asm_band_pct', 2), bandR = await setting('booklet_rsm_band_pct', 5);
@@ -195,7 +196,7 @@ export async function createBooklet(s: Session, body: any, ip: string | null) {
     const b = (await c.query(`insert into booklets(no,user_id,customer_id,order_date,due_date,remarks,level,final_level,max_variance) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
       [no, s.id, cust.id, today, due, String(body.remarks || '').slice(0, 500) || null, CHAIN[startIdx], CHAIN[finalIdx], maxVar])).rows[0];
     for (const i of items) await c.query(`insert into booklet_items(booklet_id,product_id,qty,base_rate,ask_rate,bonus_buy,bonus_free,discount_pct,net_rate,variance_pct,remarks) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [b.id, i.p.id, i.qty, i.p.trade_rate, i.ask, i.buy, i.free, i.disc, i.net, i.variance, i.remarks || null]);
+      [b.id, i.p.id, i.qty, i.base, i.ask, i.buy, i.free, i.disc, i.net, i.variance, i.remarks || null]);
     await c.query('insert into approvals(doc_type,doc_id,level,user_id,user_name,action) values($1,$2,$3,$4,$5,$6)', ['booklet', b.id, null, s.id, s.name, 'Submitted']);
     await c.query('commit');
     await audit(s, 'create', 'booklets', b.id, null, { no, customer: cust.name, max_variance: maxVar }, ip);

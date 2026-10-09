@@ -264,6 +264,18 @@ async function main() {
     ok('an item can be decided straight from the inbox', one && (await cc.post(one.url, { ...one.ok, remarks: 'ok' })).data.status === 'Approved' && !(await cc.get('/api/approvals')).data.items.some((i: any) => i.key === one.key), one);
   }
 
+  // the new features where people look first: dashboard pulse, customer page, reports, booklet base rate
+  { const pg = (await gm.get('/api/pulse')).data.cards, ps = (await so.get('/api/pulse')).data.cards, K = (c: any[], k: string) => c.find((x: any) => x.k === k);
+    ok('the dashboard pulse shows stock at risk, approvals and returns to the GM', K(pg, 'risk')?.value > 0 && K(pg, 'approvals')?.value > 0 && K(pg, 'returns')?.tone === 'crit' && K(pg, 'short'), pg);
+    ok('a sales officer gets the selling cards only', K(ps, 'actions') && !K(ps, 'returns') && !K(ps, 'short') && !K(ps, 'approvals'), ps);
+    for (const k of ['expiry-position', 'expiry-returns', 'channel', 'transfers', 'scheme-results', 'rebate', 'customer-classes', 'action-answers']) { const r = await gm.get(`/api/reports/${k}`); ok(`report ${k} downloads`, r.status === 200 && (r.data as ArrayBuffer).byteLength > 2000, r.status); }
+    const html = new TextDecoder().decode((await so.get(`/customers/${c1.id}`)).data as ArrayBuffer);
+    ok('the customer page shows class, returns allowance and running schemes', html.includes('Selling to this customer') && html.includes('Expiry returns allowance') && html.includes('contract'), html.length);
+    const cip = prods.find((p: any) => p.code === 'CIPED'), due2 = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
+    const bkl = (await so.post('/api/booklets', { customer_id: c1.id, due_date: due2, items: [{ product_id: cip.id, qty: 10, ask_rate: 40 }] })).data;
+    ok("a booklet at the customer's price-list rate is not below base", bkl.final_level === 'asm', bkl);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

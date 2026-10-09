@@ -47,7 +47,9 @@ Attendance, leave and expense claims are deliberately not part of this app.
 | Samples and gifts, competitor information | Recorded in the field, seen by managers |
 | Alerts | Visit outside the geo-fence, customers not visited, approvals waiting too long, instruments expiring, stock at risk of expiry |
 | Approvals | Everything waiting for a person on one screen, with Approve and Reject in place |
-| Targets, scorecard, control room, reports | Monthly targets, achievement, score and incentive; Excel reports |
+| Dashboard | "Sales and loss today": chances to sell, approvals waiting, stock at risk, products short, expiry returns against the limit; then the control room |
+| Customer page | Everything about one customer, including its class, returns allowance, rebate position, own rates and running schemes |
+| Targets, scorecard, reports | Monthly targets, achievement, score and incentive; 25 Excel reports |
 
 ### Administration
 Masters (employees, regions, areas, products, customers, payment terms) with Excel import/export, roles with permissions as data, settings for every limit, notices, notification bell, audit log. Dates are shown in AD and BS; document numbers carry the Nepali fiscal year.
@@ -72,7 +74,7 @@ These defaults were chosen while building; set them to the company's own policy 
 
 ## Checks
 
-`npm run smoke` runs 131 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
+`npm run smoke` runs 143 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
 
 ## Run it on your own computer (for a developer)
 
@@ -197,7 +199,6 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 - The app does not work offline.
 - Free stock of a batch is the uploaded quantity less near-expiry lot orders taken since; ordinary sales are reflected only at the next stock upload. Upload stock regularly.
 - Suggested orders, bought-vs-sold and transfer suggestions need distributor stock reports not older than 45 days.
-- Booklet approval levels compare the asked rate with the product's trade rate, not with the customer's price list.
 - "Forgot password" is handled by the Admin setting a new password on the employee form.
 - Dates on forms are entered in AD.
 - The Docker files have not been run in the build environment.

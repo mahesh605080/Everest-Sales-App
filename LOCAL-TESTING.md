@@ -73,6 +73,17 @@ Alag-alag role ke liye alag browser ya "Incognito/Private window" use karo, taki
 9. **GM01**: Dashboard (control room), "Targets and scorecard" me target dalo, "Reports" se Excel nikalo.
 10. **ADMIN**: "Roles and permissions", "Settings", "Audit log".
 
+### Stock, expiry, scheme aur returns ka chakkar
+
+11. **CC01**: "Stock and expiry" → "Upload stock" → template download karo. Usme 3-4 line bharo: product code (jaise `NS500`), batch, expiry (ek batch 4 mahine baad ki, ek 2 saal baad ki), boxes. Upload karo. "Expiry position" me seedhi aur "Will not sell in time" dekho.
+12. **SO01**: "Stock and expiry" → 4 mahine wale batch par "Find buyers" → "Create order". Order offer rate par banega aur "non-returnable" likha aayega.
+13. **GM01**: "Schemes" → Add → product chuno, minimum 20 boxes, bonus 10 + 1, aaj se 30 din. Phir **SO01** us product ka 28 boxes ka order banaye: free boxes aur "Add 2 more boxes" ka ishara dikhega.
+14. **GM01**: "Price lists" → Add → ek product ka Hospital ya Distributor rate. Us type ke customer ke order me wahi rate apne aap aayega.
+15. **SO01**: "Distributor stock" → ek distributor ka stock aur 30 din ki bikri bharo → "Sales orders" → New → "Suggested order". Bahut zyada boxes daal kar overstock ki chetavni dekho. "Quick entry" bhi try karo.
+16. **SO01**: "Claims" → Near expiry claim: bina batch/expiry ke, ya door ki expiry ke saath mana hoga. Sahi claim par **GM01** ko "Policy check" dikhega.
+17. **GM01**: "Yearly rebate" → slab daalo (jaise 1,00,000 par 1%, 5,00,000 par 2%). "Approvals" me sab kuch ek jagah. "Stock and expiry" → "Loss and returns" aur "Short stock". "Scheme results". Dashboard par "Sales and loss today".
+18. **SO01**: "Sales opportunities" → Action list me Done / Later / Not interested. Kisi customer ka naam kholo: class, returns allowance, rate aur scheme dikhenge.
+
 ## Computer par test ki seema
 
 - **Location**: `localhost` par browser location deta hai, par computer me GPS nahi hota, isliye location Wi-Fi se andaze wali aati hai (kabhi 1-2 km galat). Geo-fence ka sahi test phone par hi hoga.

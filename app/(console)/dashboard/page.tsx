@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import ControlRoom from '@/components/ControlRoom';
+import Pulse from '@/components/Pulse';
 import MyScore from '@/components/MyScore';
 import CreditHome from '@/components/CreditHome';
 import { getSession } from '@/lib/auth';
@@ -43,6 +44,7 @@ export default async function Dashboard() {
 
   return (
     <>
+      <Pulse />
       {can(s, 'scorecard.view') && <ControlRoom />}
       {!can(s, 'scorecard.view') && can(s, 'field.use') && <MyScore />}
       {can(s, 'credit.manage') && !can(s, 'scorecard.view') && <CreditHome />}
@@ -65,7 +67,7 @@ export default async function Dashboard() {
           <tbody>{[...expired, ...expiring].map((c: any) => <tr key={c.id}><td className="code">{c.code}</td><td><b>{c.name}</b></td><td>{c.town}</td><td>{c.assigned_to__label || '–'}</td><td className="num">{c.dda_expiry}</td>
             <td>{c.dda_expiry < t ? <span className="pill crit">Expired</span> : <span className="pill warn">Expiring</span>}</td></tr>)}</tbody></table></div></section>}
       <div className="g two">
-        {company && <section className="card"><div className="hd"><h2>Setup checklist</h2><span className="sub">what Phase 2 needs before the field app goes live</span></div>
+        {company && <section className="card"><div className="hd"><h2>Setup checklist</h2><span className="sub">what must be in place before the team starts using the app</span></div>
           <div>{steps.map(x => <div className="check" key={x[0]}><span className={`tick ${x[1] ? 'ok' : ''}`}>{x[1] ? '✓' : ''}</span><div className="t" style={{ flex: 1 }}><b>{x[0]}</b><br /><span className="sub">{x[2]}</span></div><Link className="btn sm" href={x[3]}>Open</Link></div>)}</div></section>}
         {company && <section className="card"><div className="hd"><h2>People by role</h2></div><Bars rows={emp} /></section>}
       </div>
