@@ -234,6 +234,19 @@ async function main() {
     ok('channel views are not open to a sales officer', (await so.get('/api/stock?view=transfers')).status === 403);
   }
 
+  // one ranked action list with answers, and customer classes
+  { const al = (await so.get('/api/sales/actions')).data, bkKey = `bk:${c1.id}:${small.id}`;
+    ok('the action list ranks chances by value and urgency', al.actions.some((a: any) => a.key === bkKey) && al.actions.every((a: any, i: number) => !i || al.actions[i - 1].score >= a.score), al.actions.map((a: any) => [a.key, a.score]));
+    ok('"not interested" needs a reason', (await so.post('/api/sales/actions', { key: bkKey, outcome: 'no' })).status === 422);
+    ok('an action for another territory cannot be answered', (await so.post('/api/sales/actions', { key: `lap:${other.id}`, outcome: 'done' })).status === 403);
+    ok('a made-up action is refused', (await so.post('/api/sales/actions', { key: 'x:1', outcome: 'done' })).status === 422);
+    ok('answering hides the action', (await so.post('/api/sales/actions', { key: bkKey, outcome: 'no', reason: 'Has enough stock' })).status === 200 && !(await so.get('/api/sales/actions')).data.actions.some((a: any) => a.key === bkKey));
+    const fb = (await asm.get('/api/sales/actions?view=feedback')).data;
+    ok('the manager sees why customers said no', fb.counts.no === 1 && fb.reasons[0].reason === 'Has enough stock' && (await so.get('/api/sales/actions?view=feedback')).status === 403, fb);
+    const cl = (await gm.get('/api/sales/actions?view=classes')).data;
+    ok('customers are classed A, B, C by 12-month sales', cl.customers.find((c: any) => c.id === c1.id)?.cls === 'A' && cl.summary.reduce((a: number, x: any) => a + x.customers, 0) === cl.customers.length && cl.customers.some((c: any) => c.cls === 'C'), cl.summary);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

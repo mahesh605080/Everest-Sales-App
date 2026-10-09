@@ -149,6 +149,12 @@ The system's first job is to get more orders in with less effort. These screens 
 - **Bought vs sold** (Distributor stock) — monthly purchases against monthly market sale per distributor and product: piling up, overstocked, running low, not selling, with the value of extra stock.
 - **Move stock** — pairs a distributor who cannot sell a product in time with one running short of it (same area first), so stock moves instead of expiring.
 
+## Action list and customer classes
+
+- **Action list** (Sales opportunities and My day) — near-expiry lots, approved rates not yet ordered, distributors running low, customers who stopped ordering and overdue visits, in one list ranked by value × urgency.
+- **Answers** — each action can be marked Done, Later or Not interested (with a reason). Answered actions hide for a while; managers see the reasons customers gave in the last 30 days.
+- **Customer classes** — A (first 80% of 12-month sales), B (next 15%), C (rest), with a visit norm per class (`visit_days_a/b/c`) and overdue visits counted.
+
 ## Experience upgrades
 
 | Area | What works now |

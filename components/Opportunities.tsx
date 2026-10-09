@@ -1,9 +1,14 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { call, rs } from '@/lib/ui';
+import Actions, { Classes, Feedback } from './Actions';
 
 /** The "who should I sell to today" list. `compact` shows the top few on My day. */
-export default function Opportunities({ canOrder, compact = false }: { canOrder: boolean; compact?: boolean }) {
+export default function Opportunities(props: { canOrder: boolean; compact?: boolean; canTeam?: boolean }) {
+  if (props.compact) return <Actions canOrder={props.canOrder} compact />;
+  return <><Actions canOrder={props.canOrder} /><Classes />{props.canTeam && <Feedback />}<Detail {...props} /></>;
+}
+function Detail({ canOrder, compact = false }: { canOrder: boolean; compact?: boolean; canTeam?: boolean }) {
   const [d, setD] = useState<any>(null); const [err, setErr] = useState('');
   useEffect(() => { call('/api/sales/opportunities').then(setD).catch(e => setErr(e.message)); }, []);
   if (err) return <div className="errbox" role="alert">{err}</div>;
