@@ -1,0 +1,48 @@
+# Start everything:  docker compose up -d --build
+# Needs a .env file next to this one (copy .env.example) with DB_PASSWORD, AUTH_SECRET and DOMAIN set.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sfa
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: sfa
+      TZ: Asia/Kathmandu
+      PGTZ: Asia/Kathmandu
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sfa -d sfa"]
+      interval: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL:-}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://sfa:${DB_PASSWORD}@db:5432/sfa
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD:-Everest@123}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TZ: Asia/Kathmandu
+
+  # Gives the site an https address with an automatic certificate. Point your domain's DNS at this server first.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN in .env} --to app:3000
+    volumes:
+      - caddydata:/data
+
+volumes:
+  dbdata:
+  caddydata:
