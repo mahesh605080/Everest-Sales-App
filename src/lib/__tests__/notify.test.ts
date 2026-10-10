@@ -36,6 +36,6 @@ describe('where a tap leads', () => {
     expect(tapRoute('/approvals', appRoute)).toBe('/approvals'); expect(tapRoute('/expiry', appRoute)).toBe('/offers'); expect(tapRoute('/customers/12', appRoute)).toBe('/customer/12');
   });
   test('anything else opens the notification list, never an outside address', () => {
-    for (const bad of ['https://evil.example', '//evil.example', 'javascript:alert(1)', '/chat/../../login', '/unknown', '', null, undefined, 42, { url: '/orders' }]) expect(tapRoute(bad, appRoute)).toBe('/notifications');
+    for (const bad of ['https://evil.example', '//evil.example', '/\\evil.example/x', '/\t/evil.example', 'javascript:alert(1)', '/chat/../../login', '/unknown', '', null, undefined, 42, { url: '/orders' }]) expect(tapRoute(bad, appRoute)).toBe('/notifications');
   });
 });

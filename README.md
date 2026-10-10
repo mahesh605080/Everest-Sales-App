@@ -27,11 +27,22 @@ The Android and iOS app for the field team of Everest Parenterals Pvt. Ltd. It i
 - Check-in sends the GPS position; Android's "mock location" flag is sent with it and the manager gets an alert.
 - "On duty" records the route every two minutes or 100 m, also with the app closed, and uploads it in batches. Android shows a permanent notification while it runs.
 
+### Notifications on the phone
+
+- New notifications and chat messages show as phone notifications. A tap opens the right screen.
+- **While the app is open** they arrive at once. **While "On duty" is on** they arrive within about two minutes, also with the phone in the pocket. **With the app closed and duty off**, Android lets the app check about every 15 minutes at best, later in battery saver, and not at all after "Force stop". A closed Android app cannot be woken instantly without Google's messaging service, which this app does not use.
+- On an iPhone, once the server has Apple credentials, notifications come straight from Apple and arrive with the app closed.
+- More → Notification settings: allow notifications, switch kinds off, set quiet hours. Whatever is switched off still appears in the Notifications list.
+- The library that shows notifications on Android is compiled together with Google's messaging client. It is never started: there is no Firebase project or configuration in this app, and nothing travels through Google.
+- None of this has run on a real phone yet. The rules that decide what is new and where a tap leads are unit-tested.
+
+The full picture for every kind of device is in the web repository, `docs/platform/NOTIFICATIONS.md`.
+
 ## Not built yet
-Push notifications, selfie or photo capture, the tour plan, booklet creation, claims, samples and competitor entries, the manager's live map, Nepali (BS) dates, and a Nepali-language screen option. These are on the web app today.
+Selfie or photo capture, the tour plan, booklet creation, claims, samples and competitor entries, the manager's live map, Nepali (BS) dates, and a Nepali-language screen option. These are on the web app today.
 
 ## How it was checked
-- `npm run typecheck` and `npm test` (11 unit tests for the offline queue and the price rules) pass.
+- `npm run typecheck` and `npm test` (24 unit tests for the offline queue, the price rules and the notification rules) pass.
 - The app was run in a browser preview at phone size against the real server with demo data: login, check-in, order with scheme, order with no connection and its later sending, check-out, collection, stock report, offers and approvals.
 - The Android project generates (`expo prebuild`) with the right permissions and the Android JavaScript bundle builds.
 - **It has not yet been installed on a real phone or emulator**: no Android SDK was available where it was written. GPS, background route recording, the keystore and the look on a real device are therefore unproven until the first APK is tried.
