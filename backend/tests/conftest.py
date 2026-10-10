@@ -39,3 +39,18 @@ def sql(db):
         db.commit()
         return r
     return run
+
+
+@pytest.fixture()
+def as_user(client, sql):
+    """Authorization headers for a sample person. The Super Admin's temporary-password flag is cleared for the tests."""
+    from tests.helpers import token
+    sql("update public.users set must_change_password = false, failed_logins = 0, locked_until = null, active = true where code = 'ADMIN'")
+    sql("delete from platform.rate_limits")
+    cache: dict = {}
+
+    def get(code: str):
+        if code not in cache:
+            cache[code] = token(client, code)
+        return cache[code]
+    return get
