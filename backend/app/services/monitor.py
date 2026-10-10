@@ -13,7 +13,7 @@ from ..models.jobs import Alert
 
 log = logging.getLogger("platform.monitor")
 Finding = tuple[str, str, dict]  # severity, message, detail
-LIMITS = {"notify_backlog_warn": 600, "notify_backlog_crit": 3600, "notify_dead_hour": 20, "jobs_late": 1800, "disk_warn": 0.10, "disk_crit": 0.03, "failed_logins_15m": 50, "db_conn_share": 0.8}
+LIMITS = {"notify_backlog_warn": 600, "notify_backlog_crit": 3600, "notify_dead_hour": 20, "jobs_late": 1800, "disk_warn": 0.10, "disk_crit": 0.03, "failed_logins_15m": 50, "db_conn_share": 0.8, "backup_hours": 36, "verify_days": 8}
 
 
 def _notify_backlog(db: Session) -> Finding | None:
@@ -81,7 +81,45 @@ def _configuration(db: Session) -> Finding | None:
     return ("critical", p[0] + ".", {}) if p else None
 
 
-RULES = {"notify.backlog": _notify_backlog, "notify.failures": _notify_dead, "jobs.failed": _jobs_dead, "jobs.late": _jobs_late, "storage.disk": _disk, "auth.failed_logins": _failed_logins,
+def backup_state(db: Session) -> dict:
+    """What the backup scripts last recorded. They write two small settings; nothing about the backup's contents is kept here."""
+    import json
+    out: dict = {"last": None, "verified": None}
+    for key, name in (("backup.last", "last"), ("backup.verified", "verified")):
+        v = db.execute(text(f"select value from {SCHEMA}.settings where key = :k"), {"k": key}).scalar()  # noqa: S608
+        try:
+            out[name] = json.loads(v) if v else None
+        except ValueError:
+            out[name] = None
+    return out
+
+
+def _age_hours(stamp: str | None) -> float | None:
+    try:
+        return (datetime.now(UTC) - datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))).total_seconds() / 3600
+    except (TypeError, ValueError):
+        return None
+
+
+def _backup(db: Session) -> Finding | None:
+    if get_settings().env != "production":   # a developer machine has no backups and needs none
+        return None
+    b = backup_state(db)
+    age = _age_hours((b["last"] or {}).get("at"))
+    if age is None:
+        return ("warning", "No backup has been made yet. Set up the nightly backup (see the deployment guide).", {})
+    if age > LIMITS["backup_hours"]:
+        return ("critical" if age > 3 * LIMITS["backup_hours"] else "warning", f"The last backup is {int(age // 24)} days {int(age % 24)} hours old.", {"hours": int(age)})
+    v = b["verified"] or {}
+    if v.get("ok") is False:
+        return ("critical", "The last test restore of a backup failed: " + str(v.get("reason", "see the server"))[:160], {"name": v.get("name")})
+    vage = _age_hours(v.get("at"))
+    if vage is None or vage > LIMITS["verify_days"] * 24:
+        return ("warning", "No backup has been test-restored " + ("yet." if vage is None else f"for {int(vage // 24)} days.") + " A backup that was never restored is only a hope.", {})
+    return None
+
+
+RULES = {"backup": _backup, "notify.backlog": _notify_backlog, "notify.failures": _notify_dead, "jobs.failed": _jobs_dead, "jobs.late": _jobs_late, "storage.disk": _disk, "auth.failed_logins": _failed_logins,
          "db.connections": _db_connections, "db.migrations": _migrations, "realtime.listener": _realtime, "configuration": _configuration}
 
 

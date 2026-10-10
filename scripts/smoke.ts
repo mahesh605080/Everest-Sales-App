@@ -397,7 +397,9 @@ async function main() {
     const bell = (await so.get('/api/notifications')).data;
     ok('it is under the bell of the person it was sent to', bell.items.some((n: any) => n.title === title && n.link === '/orders' && !n.read), bell.items?.[0]);
     const muted = await gm.post('/api/v1/notifications', { title: title + ' stock', category: 'stock', audience: { kind: 'users', ids: [me] } });
-    ok('a muted kind is held back and reported as such', muted.data.deliveries?.['inapp:skipped'] === 1 && !(await so.get('/api/notifications')).data.items.some((n: any) => n.title === title + ' stock'), muted);
+    ok('muting a kind stops push for it, never the bell', muted.data.deliveries?.['inapp:stored'] === 1 && (await so.get('/api/notifications')).data.items.some((n: any) => n.title === title + ' stock'), muted);
+    ok('a link that a browser would read as another site is refused', (await gm.post('/api/v1/notifications', { title: 'x', url: '/\\evil.example/x', audience: { kind: 'users', ids: [me] } })).status === 422 && (await gm.post('/api/v1/notifications', { title: 'x', audience: { kind: 'area' } })).status === 422);
+    ok('a manager sees only what they sent; what the system sent is for the Super Admin', (await gm.get('/api/v1/notifications?source=system')).status === 403);
     await so.put('/api/v1/notifications/preferences', { push_enabled: true, muted_categories: [] });
     ok('the send screen and the settings open', (await gm.get('/notify')).status === 200 && (await so.get('/profile')).status === 200 && (await gm.get('/api/v1/notifications')).data.notifications.some((n: any) => n.title === title));
     const sw = await (await fetch(`${BASE}/sw.js`)).text();
@@ -408,6 +410,7 @@ async function main() {
   { const page = await (await fetch(`${BASE}/admin`, { headers: { cookie: gm.cookie } })).text();
     ok('the platform console is closed to everyone but the Super Admin', page.includes('No access') && (await gm.get('/api/v1/admin/monitor')).status === 403 && (await gm.get('/api/v1/admin/jobs')).status === 403 && (await gm.post('/api/v1/admin/jobs', { kind: 'events.prune' })).status === 403);
     ok('the audit log can be searched', (await gm.get('/audit?q=booklet')).status === 200 && (await gm.get(`/audit?q=${encodeURIComponent("' or 1=1 --")}`)).status === 200);
+    ok('text the database cannot hold is refused politely, not with a server error', (await gm.get('/audit?q=%00')).status === 200 && (await gm.get('/api/m/customers?q=%00')).status !== 500 && (await gm.get('/api/v1/chat/people?q=%00')).status === 422);
   }
 
   // changing a password signs out every other session of that person

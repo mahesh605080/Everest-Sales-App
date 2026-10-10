@@ -6,6 +6,7 @@ export type PushState = 'unsupported' | 'off-on-server' | 'blocked' | 'on' | 'of
 const key = (b64: string) => { const s = atob((b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, c => c.charCodeAt(0)); };
 const supported = () => typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const iosTab = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone);
+const sameKey = (sub: PushSubscription, want: Uint8Array) => { const k = sub.options.applicationServerKey; if (!k) return true; const have = new Uint8Array(k); return have.length === want.length && have.every((b, i) => b === want[i]); };
 const save = (sub: PushSubscription) => { const j = sub.toJSON(); return call('/api/v1/push/subscriptions', { method: 'POST', json: { channel: 'webpush', endpoint: j.endpoint, keys: j.keys } }); };
 
 export async function pushState(): Promise<PushState> {
@@ -25,8 +26,8 @@ export async function enablePush(): Promise<PushState> {
   if ((await Notification.requestPermission()) !== 'granted') return Notification.permission === 'denied' ? 'blocked' : 'off';
   const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
-  const want = key(cfg.webpush.public_key), have = sub?.options.applicationServerKey ? new Uint8Array(sub.options.applicationServerKey) : null;
-  if (sub && have && (have.length !== want.length || have.some((b, i) => b !== want[i]))) { await sub.unsubscribe(); sub = null; }   // the server's key was changed: the old subscription is useless
+  const want = key(cfg.webpush.public_key);
+  if (sub && !sameKey(sub, want)) { await sub.unsubscribe(); sub = null; }   // the server's key was changed: the old subscription is useless
   sub = sub || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: want });
   await save(sub);
   return 'on';
@@ -43,6 +44,15 @@ export async function disablePush(): Promise<void> {
 /** On every visit: if this browser already has a subscription, make sure the server has it under the person now logged in. Never asks for permission. */
 export async function syncPush(): Promise<void> {
   if (!supported() || Notification.permission !== 'granted') return;
-  const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription();
-  if (sub) await save(sub).catch(() => {});
+  const reg = await navigator.serviceWorker.ready; let sub = await reg.pushManager.getSubscription();
+  if (!sub) return;
+  // If the server's key was changed, the old subscription can never be used again: make a new one. Permission was already given, so nothing is asked.
+  const cfg = await call('/api/v1/push/config').catch(() => null);
+  if (!cfg?.webpush?.enabled) return;
+  if (!sameKey(sub, key(cfg.webpush.public_key))) {
+    await call('/api/v1/push/unsubscribe', { method: 'POST', json: { endpoint: sub.endpoint } }).catch(() => {});
+    await sub.unsubscribe().catch(() => {});
+    try { sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(cfg.webpush.public_key) }); } catch { return; }
+  }
+  await save(sub).catch(() => {});
 }

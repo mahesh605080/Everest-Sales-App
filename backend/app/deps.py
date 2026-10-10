@@ -95,7 +95,10 @@ def check_origin(request: Request):
         return
     origin = request.headers.get("origin")
     if not origin:
-        return  # not a browser (the mobile app, server-to-server); those use the Authorization header
+        # No Origin: not a browser, or an old one. Modern browsers also say where a request came from in Sec-Fetch-Site; refuse what they mark as foreign.
+        if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+            raise ApiError(403, "Request blocked: it did not come from this site.", "bad_origin")
+        return
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     allowed = {f"http://{host}", f"https://{host}", *get_settings().origins}
     if origin.rstrip("/") not in allowed:

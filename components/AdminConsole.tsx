@@ -47,6 +47,8 @@ function Overview() {
       <Kpi label="Push waiting" value={waiting} sub={waiting ? `Oldest ${span(q.oldest_due_seconds)}` : `${q.last_7_days.dead || 0} could not be sent, 7 days`} tone={q.oldest_due_seconds > 600 ? 'warn' : undefined} />
       <Kpi label="Online now" value={d.realtime.people_online} sub={`${d.realtime.connections} connections · ${d.realtime.listening ? 'listening' : 'not listening'}`} tone={d.realtime.listening ? undefined : 'crit'} />
       <Kpi label="Files" value={size(st.bytes)} sub={`${st.files} files · disk ${size(st.disk_free_bytes)} free`} tone={st.disk_free_bytes / st.disk_total_bytes < 0.1 ? 'warn' : undefined} />
+      <Kpi label="Last backup" value={d.backup?.last ? when(d.backup.last.at) : 'None recorded'} tone={!d.backup?.last || d.backup?.verified?.ok === false ? 'warn' : undefined}
+        sub={d.backup?.last ? `${size(d.backup.last.database_bytes + (d.backup.last.files_bytes || 0))} · ${d.backup.verified ? (d.backup.verified.ok ? `test-restored ${when(d.backup.verified.at)}` : 'test restore FAILED') : 'never test-restored'}` : 'See the deployment guide'} />
       <Kpi label="Requests" value={d.api.requests} sub={`${d.api.server_errors} server errors since start`} tone={d.api.server_errors ? 'warn' : undefined} />
     </div>
     <section className="card"><h2>What is switched on</h2>
@@ -98,7 +100,7 @@ function Jobs() {
 
 function Notify() {
   const q = useLoad<any>(`${A}/notify/queue`, 15000); const dv = useLoad<any>(`${A}/push/subscriptions?limit=200`); const [err, setErr] = useState('');
-  const L: [string, string][] = [['stored', 'In the inbox'], ['queued', 'Waiting to send'], ['accepted', 'Accepted by push service'], ['confirmed', 'Shown on device'], ['failed', 'Will retry'], ['dead', 'Could not be sent'], ['expired', 'Expired unsent'], ['skipped', 'Held back']];
+  const L: [string, string][] = [['stored', 'In the inbox'], ['queued', 'Waiting to send'], ['accepted', 'Accepted by push service'], ['confirmed', 'Shown on device'], ['failed', 'Will retry'], ['dead', 'Could not be sent'], ['expired', 'Expired unsent'], ['skipped', 'Push held back or withdrawn']];
   return <>
     <section className="card"><div className="hd"><h2>Last 7 days</h2><Link className="btn sm primary" href="/notify">Send a notification</Link></div><Err text={q.err || err} />
       {!q.d ? <p className="sub">Loading…</p> : <><div className="g kpi">{L.map(([k, n]) => <Kpi key={k} label={n} value={q.d.last_7_days[k] || 0} tone={k === 'dead' && q.d.last_7_days[k] ? 'warn' : undefined} />)}</div>

@@ -7,6 +7,8 @@ import { realtime } from '@/lib/realtime';
 import { disablePush, syncPush } from '@/lib/push';
 
 type Item = { href: string; label: string };
+// A notification's link is followed only if, read the way the browser reads it, it still points at this site.
+const inSite = (u: any) => { try { const x = new URL(String(u || ''), location.origin); return typeof u === 'string' && u.startsWith('/') && x.origin === location.origin ? x.pathname + x.search + x.hash : '/dashboard'; } catch { return '/dashboard'; } };
 type Group = { group: string; items: Item[] };
 const SOON = [['Android and iOS app', 'Next'], ['Samples, competitor info', 'Next'], ['Order PDF and SMS', 'Next']];
 
@@ -27,7 +29,7 @@ export default function Shell({ user, nav, primary = [], titles, today, children
     window.addEventListener('beforeinstallprompt', onInstall);
     return () => { off(); clearInterval(t); window.removeEventListener('beforeinstallprompt', onInstall); };
   }, []);
-  async function openNote(n: any) { if (!n.read) await call('/api/notifications', { method: 'POST', json: { id: n.id } }).catch(() => {}); window.location.href = n.link || '/dashboard'; }
+  async function openNote(n: any) { if (!n.read) await call('/api/notifications', { method: 'POST', json: { id: n.id } }).catch(() => {}); window.location.href = inSite(n.link); }
   async function readAll() { await call('/api/notifications', { method: 'POST', json: { id: 'all' } }).catch(() => {}); setNotes(n => ({ unread: 0, items: n.items.map(i => ({ ...i, read: true })) })); }
   const glow = useRef<HTMLDivElement>(null), prog = useRef<HTMLDivElement>(null), top = useRef<HTMLDivElement>(null);
   const key = Object.keys(titles).filter(k => path.startsWith(k)).sort((a, b) => b.length - a.length)[0];

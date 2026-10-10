@@ -25,8 +25,8 @@ export default function NotifySettings() {
       <div className="hd"><div><b>On this browser</b><br /><span className="sub">{state ? WHY[state] : 'Checking…'}</span></div>
         {(state === 'on' || state === 'off') && <button className={`btn ${state === 'on' ? '' : 'primary'}`} disabled={busy} onClick={toggle}>{busy ? 'Wait…' : state === 'on' ? 'Switch off' : 'Switch on'}</button>}</div>
       {p && <>
-        <div className="fld"><label className="chk"><input type="checkbox" checked={p.push_enabled} onChange={e => save({ ...p, push_enabled: e.target.checked })} /> Send push to my devices</label><small>When off, everything still arrives under the bell.</small></div>
-        <div className="fld"><span className="lab" style={{ fontSize: 12, fontWeight: 600 }}>Do not tell me about</span>
+        <div className="fld"><label className="chk"><input type="checkbox" checked={p.push_enabled} onChange={e => save({ ...p, push_enabled: e.target.checked })} /> Send push to my devices</label><small>Whatever you choose here, everything still arrives under the bell.</small></div>
+        <div className="fld"><span className="lab" style={{ fontSize: 12, fontWeight: 600 }}>No push for</span>
           {p.categories.map((c: string) => <label key={c} className="chk"><input type="checkbox" checked={p.muted_categories.includes(c)} onChange={e => save({ ...p, muted_categories: e.target.checked ? [...p.muted_categories, c] : p.muted_categories.filter((x: string) => x !== c) })} /> {LABEL[c] || c}</label>)}</div>
         <div className="fld"><label htmlFor="q-from">Quiet hours (Nepal time)</label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><input id="q-from" style={{ width: 130 }} type="time" aria-label="Quiet from" value={p.quiet_from || ''} onChange={e => setP({ ...p, quiet_from: e.target.value })} /><span>to</span><input type="time" style={{ width: 130 }} aria-label="Quiet to" value={p.quiet_to || ''} onChange={e => setP({ ...p, quiet_to: e.target.value })} />

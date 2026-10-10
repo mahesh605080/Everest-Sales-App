@@ -17,7 +17,7 @@
     "exceljs": "^4.4.0",
     "hash-wasm": "^4.12.0",
     "jose": "^6.2.12",
-    "maplibre-gl": "^4.7.1",
+    "maplibre-gl": "^6.13.0",
     "nepali-date-converter": "^3.4.0",
     "next": "^15.5.27",
     "pg": "^8.23.1",
@@ -31,5 +31,11 @@
     "@types/react-dom": "^19.3.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.29",
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

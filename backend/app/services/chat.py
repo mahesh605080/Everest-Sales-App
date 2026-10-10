@@ -8,6 +8,7 @@ from ..db import SCHEMA
 from ..deps import Principal
 from ..errors import ApiError
 from ..models.realtime import ChatMember, ChatMessage, ChatRoom
+from . import ratelimit
 from .events import emit
 
 MAX_TEXT, MAX_MEMBERS = 4000, 50
@@ -72,6 +73,7 @@ def send(db: Session, p: Principal, room_id: str, body, client_id=None) -> dict:
         had = db.scalar(select(ChatMessage).where(ChatMessage.sender_id == p.id, ChatMessage.client_id == cid))
         if had:
             return message_view(had)
+    ratelimit.limit(db, f"chat:{p.id}", 60, 60, "You are sending messages too fast. Wait a moment.")
     m = ChatMessage(room_id=room.id, sender_id=p.id, body=body, client_id=cid)
     db.add(m)
     db.flush()

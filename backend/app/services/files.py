@@ -14,7 +14,7 @@ from ..db import SCHEMA
 from ..deps import Client, Principal
 from ..errors import ApiError
 from ..models.files import FileEvent, FileShare, StoredFile, UserQuota
-from . import filetypes
+from . import filetypes, ratelimit
 from .storage import get_storage
 
 MANAGE = "files.manage"  # may see and remove every file
@@ -54,6 +54,7 @@ async def store(db: Session, p: Principal, upload, folder: str | None, ref_type:
     """Reads the upload in pieces, refusing it as soon as it is too large, and keeps it only if its content is an accepted type."""
     if not p.can(USE):
         raise ApiError(403, "Your role does not include file storage.", "forbidden")
+    ratelimit.limit(db, f"upload:{p.id}", 120, 600, "Too many uploads in a short time. Wait a few minutes.")
     s = get_settings()
     name = clean_name(upload.filename or "")
     q = quota(db, p.id)

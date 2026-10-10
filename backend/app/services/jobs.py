@@ -75,9 +75,11 @@ def _prune_events(db: Session, p: dict) -> dict:
     return {"deleted": _del(db, f"delete from {SCHEMA}.events where created_at < now() - make_interval(days => :d)", d=p["keep_days"])}  # noqa: S608
 
 
-@kind("auth.cleanup", "Clear out expired logins, used reset codes and old login history", keep_days=(90, 7, 3650), history_days=(365, 30, 3650))
+@kind("auth.cleanup", "Clear out expired logins, used reset codes and old login history", keep_days=(90, 7, 3650), history_days=(365, 30, 3650), idle_days=(7, 1, 90))
 def _auth_cleanup(db: Session, p: dict) -> dict:
     return {
+        # A browser login nobody has used for days is ended. Phone logins are left alone: they live on short tokens that are renewed.
+        "idle_browser_logins": _del(db, f"update {SCHEMA}.sessions set revoked_at = now(), revoke_reason = 'idle' where client = 'web' and revoked_at is null and last_used_at < now() - make_interval(days => :d)", d=p["idle_days"]),  # noqa: S608
         "refresh_tokens": _del(db, f"delete from {SCHEMA}.refresh_tokens where expires_at < now() - interval '7 days'"),  # noqa: S608
         "reset_codes": _del(db, f"delete from {SCHEMA}.password_resets where expires_at < now() - interval '7 days'"),  # noqa: S608
         "rate_limits": _del(db, f"delete from {SCHEMA}.rate_limits where window_start < now() - interval '2 days'"),  # noqa: S608
@@ -146,14 +148,13 @@ def _backoff(attempt: int) -> timedelta:
 
 
 def _finish(db: Session, job_id: int, status: str, result: dict | None, error: str | None, retry_at: datetime | None = None):
-    j = db.get(Job, job_id)
-    j.status, j.result, j.last_error = status, result, error
-    if retry_at:
-        j.run_at = retry_at
-    else:
-        j.finished_at = now()
-    if j.schedule:
-        db.execute(update(Schedule).where(Schedule.name == j.schedule).values(last_status="retrying" if retry_at else status, last_run_at=now()))
+    """Writes the outcome with a plain UPDATE. If the record was removed while the work ran, nothing matches and nothing breaks."""
+    db.expire_all()
+    values: dict = {"status": status, "result": result, "last_error": error}
+    values.update({"run_at": retry_at} if retry_at else {"finished_at": now()})
+    schedule = db.execute(update(Job).where(Job.id == job_id).values(**values).returning(Job.schedule)).first()
+    if schedule and schedule[0]:
+        db.execute(update(Schedule).where(Schedule.name == schedule[0]).values(last_status="retrying" if retry_at else status, last_run_at=now()))
     db.commit()
 
 
@@ -162,25 +163,28 @@ def run_one(db: Session) -> dict | None:
     j = claim(db)
     if j is None:
         return None
-    jid, k = j.id, KINDS.get(j.kind)
+    jid, kind_name, payload, attempts, most = j.id, j.kind, j.payload, j.attempts, j.max_attempts   # plain values: the record itself may be gone by the time the work ends
+    k = KINDS.get(kind_name)
     try:
         if k is None:
             raise LookupError("no such kind of job in this version")
-        result = k.fn(db, clean_payload(j.kind, j.payload))
+        db.execute(text("set local statement_timeout = 600000"))   # clean-up deletes may run longer than a web request is allowed to
+        result = k.fn(db, clean_payload(kind_name, payload))
         db.commit()
-        _finish(db, jid, "done", result, None)
-        return {"id": jid, "kind": j.kind, "status": "done"}
     except Skip as e:
         db.rollback()
         _finish(db, jid, "done", {"skipped": str(e)[:200]}, None)
-        return {"id": jid, "kind": j.kind, "status": "done"}
+        return {"id": jid, "kind": kind_name, "status": "done"}
     except Exception as e:
         db.rollback()
-        log.exception("job failed", extra={"job": jid, "kind": j.kind})
+        log.exception("job failed", extra={"job": jid, "kind": kind_name})
         msg = f"{type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}"[:300]
-        again = j.attempts < j.max_attempts and k is not None
-        _finish(db, jid, "queued" if again else "dead", None, msg, now() + _backoff(j.attempts) if again else None)
-        return {"id": jid, "kind": j.kind, "status": "queued" if again else "dead"}
+        again = attempts < most and k is not None
+        _finish(db, jid, "queued" if again else "dead", None, msg, now() + _backoff(attempts) if again else None)
+        return {"id": jid, "kind": kind_name, "status": "queued" if again else "dead"}
+    # The work is saved. Writing "done" is a separate step: if that fails the job is not run a second time; `recover` will close it.
+    _finish(db, jid, "done", result, None)
+    return {"id": jid, "kind": kind_name, "status": "done"}
 
 
 def recover(db: Session, minutes: int = 15) -> int:
@@ -204,7 +208,7 @@ DEFAULTS = [
     ("web-alert-rules", "Field alert rules of the web app", "web.alert_rules", {}, 300, None),
     ("purge-deleted-files", "Remove deleted files for good", "files.purge_deleted", {"older_than_days": 7}, None, time(2, 30)),
     ("prune-events", "Clear old live-update events", "events.prune", {"keep_days": 14}, None, time(2, 40)),
-    ("auth-cleanup", "Clear expired logins and codes", "auth.cleanup", {"keep_days": 90, "history_days": 365}, None, time(2, 50)),
+    ("auth-cleanup", "Clear expired logins and codes", "auth.cleanup", {"keep_days": 90, "history_days": 365, "idle_days": 7}, None, time(2, 50)),
     ("prune-notifications", "Clear old notification records", "notify.prune", {"keep_days": 90}, None, time(3, 0)),
     ("prune-jobs", "Clear old job history", "jobs.prune", {"keep_days": 14, "failed_keep_days": 60}, None, time(3, 10)),
 ]
@@ -238,7 +242,12 @@ def schedule_due(db: Session) -> int:
     due = db.scalars(select(Schedule).where(Schedule.enabled, Schedule.next_run_at <= now()).with_for_update(skip_locked=True)).all()
     made = 0
     for s in due:
-        jid = enqueue(db, s.kind, s.payload, dedupe_key=f"schedule:{s.name}", schedule=s.name) if s.kind in KINDS else None
+        try:
+            with db.begin_nested():
+                jid = enqueue(db, s.kind, s.payload, dedupe_key=f"schedule:{s.name}", schedule=s.name) if s.kind in KINDS else None
+        except ApiError:   # its stored numbers are outside today's limits: skip this one, never the whole round
+            log.error("schedule has a payload its job no longer accepts", extra={"schedule": s.name})
+            jid, s.last_status = None, "dead"
         if jid:
             s.last_job_id = jid
             made += 1

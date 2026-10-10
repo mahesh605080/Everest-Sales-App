@@ -5,6 +5,7 @@ import { q1 } from './db';
 import { can, Session } from './perm';
 
 export const COOKIE = 'sfa_session';
+const IDLE_DAYS = Math.max(1, Math.floor(Number(process.env.SESSION_IDLE_DAYS)) || 7);   // whole days
 const secret = () => {
   const s = process.env.AUTH_SECRET;
   if (!s || s.length < 16) {
@@ -44,7 +45,15 @@ export async function getSession(): Promise<Session | null> {
   try {
     const { payload } = await jwtVerify(tok, secret());
     // A token tied to one login stops working the moment that login is ended, from either service.
-    if (payload.sid && !(await q1('select 1 from platform.sessions where id=$1 and user_id=$2 and revoked_at is null and expires_at > now()', [payload.sid, payload.uid]))) return null;
+    if (payload.sid) {
+      const live = await q1<{ client: string; idle: boolean; stale: boolean }>(
+        `select client, last_used_at < now() - make_interval(days => $3) as idle, last_used_at < now() - interval '5 minutes' as stale
+           from platform.sessions where id=$1 and user_id=$2 and revoked_at is null and expires_at > now()`, [payload.sid, payload.uid, IDLE_DAYS]);
+      if (!live) return null;
+      // A browser left unused for days is logged out, even though its cookie has not run out. Phone logins have their own short tokens instead.
+      if (live.client === 'web' && live.idle) { await closeLogin(payload.sid as string, 'idle'); return null; }
+      if (live.stale) await q1(`update platform.sessions set last_used_at = now() where id=$1`, [payload.sid]).catch(() => null);
+    }
     return await q1<Session>(
       `select u.id,u.code,u.name,u.phone,u.email,u.region_id,u.area_id,u.must_change_password,
               r.key as role,r.name as role_name,r.level,r.permissions
@@ -82,6 +91,8 @@ export function api(fn: (req: Request, ctx: any) => Promise<any>) {
       return out instanceof Response ? out : NextResponse.json(out ?? { ok: true });
     } catch (e: any) {
       if (e instanceof HttpError) return NextResponse.json({ error: e.message, fields: e.fields }, { status: e.status });
+      // Text or a number the database cannot hold (a zero byte, a value out of range): the caller's mistake, not a fault here.
+      if (typeof e?.code === 'string' && e.code.startsWith('22')) return NextResponse.json({ error: 'The request contains a value that cannot be stored.' }, { status: 422 });
       console.error(e);
       return NextResponse.json({ error: 'Something went wrong on the server. Please try again.' }, { status: 500 });
     }

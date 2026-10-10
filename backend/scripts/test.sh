@@ -11,7 +11,7 @@ import sys, urllib.parse as u
 p = u.urlsplit(sys.argv[1]); print(u.urlunsplit((p.scheme, p.netloc, "/" + sys.argv[2], p.query, "")))
 PY
 )"
-export AUTH_SECRET="test-secret-0123456789abcdef0123456789abcdef" PLATFORM_ENV=test PLATFORM_WORKER=0
+export AUTH_SECRET="test-secret-0123456789abcdef0123456789abcdef" PLATFORM_ENV=test PLATFORM_WORKER=0 RATE_LIMIT_PER_MINUTE=0
 (cd .. && npm run -s migrate >/dev/null && npm run -s seed -- --sample >/dev/null)   # the web app's own tables and sample people
 PY="${PYTHON:-.venv/bin/python}"
 "$PY" -m alembic upgrade head

@@ -1,6 +1,6 @@
 'use client';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { call } from '@/lib/ui';
 import { fmtDist, fmtTime, nptToday } from '@/lib/geo';

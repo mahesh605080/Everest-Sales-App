@@ -26,6 +26,9 @@ The part of the system that would otherwise be rented from Firebase or Supabase,
 | `API-REFERENCE.md` | App developers | Every endpoint (generated from the code) |
 | `NOTIFICATIONS.md` | Everyone | What reaches which device and when, honestly; how to switch push on |
 | `OPERATIONS.md` | Whoever runs the server | Settings, starting and stopping, jobs, alerts, the console |
+| `DEPLOYMENT.md` | Whoever runs the server | Putting it on a server, backup, test restore, restore, upgrade, going back |
+| `SECURITY.md` | Everyone | Threats, the control for each and the test that checks it; open points; go-live checklist |
+| `PERFORMANCE.md` | Technical readers | Load test results and what they mean |
 | `AUDIT.md` | Background | What existed before, and why the service was added beside it instead of replacing it |
 | `CHECKLIST.md`, `REPORT-phase-N.md` | Project record | What was built and tested in each phase, and what was not |
 

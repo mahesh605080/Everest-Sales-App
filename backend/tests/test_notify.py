@@ -120,8 +120,11 @@ def test_sending_needs_permission_and_broadcast_needs_more(client, as_user, sql)
 
 def test_bad_requests_are_refused(client, as_user):
     gm = as_user("GM01")
+    past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
     for extra in [{"category": "nonsense"}, {"url": "https://evil.example/x"}, {"url": "//evil.example"}, {"icon": "https://evil.example/i.png"}, {"priority": 0}, {"title": ""},
-                  {"audience": {"kind": "everyone"}}]:
+                  {"audience": {"kind": "everyone"}}, {"url": "/\\evil.example/x"}, {"url": "/\t/evil.example"}, {"url": "/a b"}, {"icon": "//evil.example/p.png"}, {"icon": "/\\evil.example/p.png"},
+                  {"audience": {"kind": "area"}}, {"audience": {"kind": "region"}}, {"audience": {"kind": "role"}}, {"audience": {"kind": "role", "key": "x; drop"}}, {"audience": {"kind": "users", "ids": []}},
+                  {"expires_at": past}, {"audience": {"kind": "area"}, "scheduled_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat()}]:
         assert send(client, gm, **extra).status_code == 422, extra
     assert send(client, gm, data={"k": "x" * 3000}).status_code == 413
     assert client.get(f"{N}/not-a-uuid", headers=gm).status_code == 404
@@ -238,7 +241,8 @@ def test_preferences(client, as_user, sql, sender, db):
     gm = as_user("GM01")
     client.put(U, json={"muted_categories": ["stock"]}, headers=so)
     muted = send(client, gm, title="T: muted", category="stock").json()
-    assert muted["deliveries"] == {"inapp:skipped": 1} and sql("select count(*) from public.notifications where title = 'T: muted'").scalar() == 0
+    assert muted["deliveries"] == {"inapp:stored": 1, "push:skipped": 1}                       # muting stops the push, never the inbox
+    assert sql("select count(*) from public.notifications where title = 'T: muted'").scalar() == 1
     assert send(client, gm, title="T: other", category="orders").json()["deliveries"] == {"inapp:stored": 1, "webpush:queued": 1}
     client.put(U, json={"push_enabled": False}, headers=so)
     assert send(client, gm, title="T: nopush").json()["deliveries"] == {"inapp:stored": 1}   # still in the inbox, never pushed
@@ -276,16 +280,21 @@ def test_quiet_hours_arithmetic():
     assert svc.quiet_until(NotifyPrefs(user_id=1), at(9)) is None
 
 
-def test_too_many_in_an_hour_are_held_back(client, as_user, sql, monkeypatch):
+def test_too_many_in_an_hour_hold_back_push_but_never_the_inbox(client, as_user, sql, monkeypatch):
     monkeypatch.setenv("NOTIFY_MAX_PER_USER_PER_HOUR", "2")
     get_settings.cache_clear()
     gm = as_user("GM01")
-    got = [send(client, gm, title=f"T: flood {i}").json()["deliveries"] for i in range(3)]
-    assert got == [{"inapp:stored": 1}, {"inapp:stored": 1}, {"inapp:skipped": 1}]
-    assert send(client, gm, title="T: flood urgent", priority=1).json()["deliveries"] == {"inapp:stored": 1}   # urgent ones always go
+    subscribe(client, as_user("SO01"))
+    got = [send(client, gm, title=f"T: flood {i}").json()["deliveries"] for i in range(4)]
+    ok, held = {"inapp:stored": 1, "webpush:queued": 1}, {"inapp:stored": 1, "push:skipped": 1}
+    assert got == [ok, ok, held, held]
+    assert sql("select count(*) from public.notifications where title like 'T: flood %'").scalar() == 4      # all four are under the bell
+    assert send(client, gm, title="T: flood urgent", priority=1).json()["deliveries"] == ok                    # urgent ones always go
     assert send(client, gm, to=[SO02], title="T: flood other").json()["deliveries"] == {"inapp:stored": 1}      # the limit is per person
-    reason = sql("select last_error from platform.deliveries where status = 'skipped'").scalar()
-    assert "too many" in reason
+    assert "too many" in sql("select last_error from platform.deliveries where status = 'skipped' limit 1").scalar()
+    # the hour passes for the two that were really pushed: the held-back ones do not keep the person blocked
+    sql("update platform.deliveries set created_at = now() - interval '2 hours' where channel = 'webpush'")
+    assert send(client, gm, title="T: flood later").json()["deliveries"] == ok
 
 
 # ---------- the queue ----------
@@ -443,7 +452,8 @@ def test_web_app_notifications_get_push_without_a_second_inbox_row(client, as_us
     assert svc.process_due(db)["accepted"] == 2                 # SO01: the system one and the manual one. SO02 has no device.
     assert sorted(c["payload"]["title"] for c in sender["calls"]) == ["T: manual", "T: order approved"]
     assert deliveries(sql, manual["id"], "webpush")[0]["status"] == "accepted"
-    hist = client.get(f"{N}?source=system", headers=as_user("GM01")).json()["notifications"]
+    assert client.get(f"{N}?source=system", headers=as_user("GM01")).status_code == 403            # what the system sent is for whoever manages notifications
+    hist = client.get(f"{N}?source=system", headers=as_user("ADMIN")).json()["notifications"]
     assert {h["title"] for h in hist} == {"T: booklet waiting", "T: order approved"}
     assert {h["title"] for h in client.get(N, headers=as_user("GM01")).json()["notifications"]} == {"T: manual"}
 
@@ -671,3 +681,147 @@ def test_push_stops_when_the_login_on_that_device_ends(client, sql, sender, db):
         assert send(client, gm, to=[SO03], title="T: after password change").json()["deliveries"] == {"inapp:stored": 1}
     finally:
         sql("update platform.sessions set revoked_at = now() where user_id = :u and revoked_at is null", u=SO03)
+
+
+def test_pushes_wait_on_the_network_side_by_side_and_each_gets_its_own_result(client, as_user, sql, sender, db):
+    import threading
+    import time as clock
+    browsers = [subscribe(client, as_user("SO01"), Browser(f"par{i}"))[0] for i in range(8)]
+    n = send(client, as_user("GM01")).json()
+    seen_threads = set()
+
+    def slow(sub, payload):
+        seen_threads.add(threading.get_ident())
+        clock.sleep(0.25)
+        i = int(sub.endpoint[-1])
+        return Result(ok=True, status=201) if i % 3 else Result(ok=False, status=410, gone=True, error="subscription no longer valid") if i == 0 else Result(ok=False, status=503, retry=True, error="push service answered 503")
+    sender["result"] = slow
+    t = clock.perf_counter()
+    out = svc.process_due(db)
+    took = clock.perf_counter() - t
+    assert out == {"accepted": 5, "failed": 2, "dead": 0, "expired": 0, "gone": 1}        # 0 gone; 3 and 6 will retry; the other five accepted
+    assert took < 1.2 and len(seen_threads) > 1, took                                     # one after another would take two seconds
+    by_endpoint = dict(sql("select s.endpoint, d.status from platform.deliveries d join platform.push_subscriptions s on s.id = d.subscription_id where d.notification_id = cast(:n as uuid)", n=n["id"]).all())
+    assert by_endpoint == {b.endpoint: ("dead" if b.endpoint[-1] == "0" else "failed" if b.endpoint[-1] in "36" else "accepted") for b in browsers}   # no result landed on the wrong device
+    assert sql("select count(*) from platform.push_subscriptions where not active").scalar() == 1
+
+
+# ---------- found by an independent review ----------
+def test_a_notification_that_cannot_be_delivered_never_blocks_the_rest(client, as_user, sql, db, sender):
+    gm = as_user("GM01")
+    subscribe(client, as_user("SO01"))
+    worker.tick()
+    # written straight into the table, the way a bug or an older version might leave it
+    sql("insert into platform.notifications(id, title, category, audience, priority, status, source, scheduled_at) values (gen_random_uuid(), 'T: broken', 'general', '{\"kind\":\"area\"}', 5, 'scheduled', 'manual', now() - interval '1 minute')")
+    good = send(client, gm, title="T: good", scheduled_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat()).json()
+    sql("update platform.notifications set scheduled_at = now() - interval '1 second' where id = cast(:i as uuid)", i=good["id"])
+    sql("insert into public.notifications(user_id, title, link) values (:u, 'T: from web after', '/orders')", u=SO01)
+    out = worker.tick()
+    assert out["released"] == 1 and out["ingested"] == 1 and out["accepted"] == 2          # the broken one did not stop the round
+    assert sql("select status from platform.notifications where title = 'T: broken'").scalar() == "cancelled"
+    assert worker.tick()["released"] == 0                                                     # and it is not tried again every two seconds
+
+
+def test_senders_see_and_withdraw_only_their_own(client, as_user, sql):
+    sql("update public.roles set permissions = permissions || '[\"notify.send\"]'::jsonb where key = 'so'")
+    try:
+        so, gm, admin = as_user("SO01"), as_user("GM01"), as_user("ADMIN")
+        mine = send(client, so, to=[SO02], title="T: from the officer").json()
+        theirs = send(client, gm, to=[SO02], title="T: from the GM", scheduled_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat()).json()
+        assert [n["title"] for n in client.get(N, headers=so).json()["notifications"]] == ["T: from the officer"]
+        assert client.get(f"{N}/{mine['id']}", headers=so).status_code == 200
+        assert client.get(f"{N}/{theirs['id']}", headers=so).status_code == 404
+        assert client.post(f"{N}/{theirs['id']}/cancel", headers=so).status_code == 404 and sql("select status from platform.notifications where title = 'T: from the GM'").scalar() == "scheduled"
+        assert {n["title"] for n in client.get(N, headers=admin).json()["notifications"]} == {"T: from the officer", "T: from the GM"}     # whoever manages sees all
+        assert client.post(f"{N}/{theirs['id']}/cancel", headers=admin).json()["status"] == "cancelled"
+        # urgent, and long lists of names, are a broadcast in all but name
+        assert send(client, so, to=[SO02], priority=1).status_code == 403
+        assert send(client, so, to=list(range(1, 202))).status_code == 403 and send(client, gm, to=list(range(1, 202))).status_code == 200
+    finally:
+        sql("update public.roles set permissions = permissions - 'notify.send' where key = 'so'")
+
+
+def test_what_was_said_in_chat_is_not_readable_from_notification_history(client, as_user, sql, sender, db):
+    sql("delete from platform.chat_rooms")
+    subscribe(client, as_user("SO02"))
+    room = client.post("/api/v1/chat/rooms", json={"user_ids": [SO02]}, headers=as_user("SO01")).json()["id"]
+    client.post(f"/api/v1/chat/rooms/{room}/messages", json={"text": "secret salary talk"}, headers=as_user("SO01"))
+    assert svc.process_due(db)["accepted"] == 1 and sender["calls"][0]["payload"]["body"] == "secret salary talk"     # the member's own device gets it
+    assert client.get(f"{N}?source=all", headers=as_user("GM01")).status_code == 403
+    rows = client.get(f"{N}?source=system", headers=as_user("ADMIN")).json()["notifications"]
+    assert len(rows) == 1 and rows[0]["title"] == "Chat message" and rows[0]["body"] is None and "salary" not in str(rows)
+    assert "salary" not in client.get(f"{N}/{rows[0]['id']}", headers=as_user("ADMIN")).text
+
+
+def test_what_was_queued_for_one_person_never_reaches_the_next_person_on_that_browser(client, as_user, sql, sender, db):
+    so = as_user("SO01")
+    br, sid = subscribe(client, so)
+    client.put(f"{N}/preferences", json={"quiet_from": "00:00", "quiet_to": "23:59"}, headers=so)      # so the push waits
+    n = send(client, as_user("GM01"), to=[SO01], title="T: private for SO01").json()
+    assert n["deliveries"] == {"inapp:stored": 1, "webpush:queued": 1}
+    subscribe(client, as_user("SO02"), br)                                                              # the session ended without a logout click; SO02 logs in
+    d = deliveries(sql, n["id"], "webpush")[0]
+    assert d["status"] == "skipped" and "another person" in d["last_error"]
+    sql("update platform.deliveries set next_attempt_at = now()")
+    assert svc.process_due(db)["accepted"] == 0 and sender["calls"] == []
+    # and even if a row slipped through (changed straight in the table), the sender refuses it
+    sql("update platform.deliveries set status = 'queued' where id = :i", i=d["id"])
+    assert svc.process_due(db)["dead"] == 1 and sender["calls"] == []
+    assert "another person" in deliveries(sql, n["id"], "webpush")[0]["last_error"]
+
+
+def test_shown_on_device_is_not_overwritten_by_a_late_accepted(client, as_user, sql, sender, db):
+    from app.db import session_factory
+    for i in range(3):
+        subscribe(client, as_user("SO01"), Browser(f"ack{i}"))
+    n = send(client, as_user("GM01")).json()
+
+    def answer(sub, payload):
+        with session_factory()() as other:      # the device reports "shown" before the worker has recorded "accepted"
+            assert svc.confirm(other, payload["ack"], False)
+            other.commit()
+        return Result(ok=True, status=201)
+    sender["result"] = answer
+    assert svc.process_due(db)["accepted"] == 3
+    rows = deliveries(sql, n["id"], "webpush")
+    assert [r["status"] for r in rows] == ["confirmed"] * 3 and all(r["confirmed_at"] and r["provider_status"] == 201 for r in rows)
+
+
+def test_inbox_rows_saved_out_of_order_are_all_picked_up_and_an_old_position_marker_is_understood(sql, db, sender):
+    assert svc.ingest_system(db) == 0
+    db.commit()
+    top = sql("select coalesce(max(id), 0) from public.notifications").scalar()
+    sql("insert into public.notifications(id, user_id, title, link) values (:i, :u, 'T: later id, saved first', '/orders')", i=top + 50, u=SO01)
+    assert svc.ingest_system(db) == 1
+    db.commit()
+    sql("insert into public.notifications(id, user_id, title, link) values (:i, :u, 'T: earlier id, saved late', '/orders')", i=top + 40, u=SO01)
+    assert svc.ingest_system(db) == 1                              # a counter that only moves forward would have stepped over this one
+    db.commit()
+    assert svc.ingest_system(db) == 0
+    db.commit()
+    # an installation upgraded from the version that kept a position
+    sql("insert into public.notifications(id, user_id, title, link) values (:i, :u, 'T: before upgrade', '/orders'), (:j, :u, 'T: after upgrade', '/orders')", i=top + 60, j=top + 70, u=SO01)
+    sql("update platform.settings set value = :v where key = 'notify.inbox_cursor'", v=str(top + 60))
+    assert svc.ingest_system(db) == 1
+    db.commit()
+    assert sql("select title from platform.notifications where source = 'system' order by created_at desc limit 1").scalar() == "T: after upgrade"
+    assert sql("select count(*) from platform.notifications where title = 'T: before upgrade'").scalar() == 0
+
+
+def test_a_long_message_in_nepali_fits_in_a_push(client, as_user, sql, db, vapid, push_service):
+    br, _ = subscribe(client, as_user("SO01"))
+    title, body = "सूचना " * 25, "भोलि डिपो बन्द रहनेछ। " * 23
+    n = send(client, as_user("GM01"), title=title[:150], body=body[:500]).json()
+    assert svc.process_due(db)["accepted"] == 1
+    data = push_service["requests"][0]["data"]
+    assert len(data) < 4000, len(data)                              # push services refuse more than about 4 KB
+    msg = br.decrypt(data)
+    assert msg["title"] == title[:150].strip() and msg["body"] == body[:500].strip() and msg["id"] == n["id"]
+
+
+def test_a_subscription_made_with_an_older_server_key_is_dropped(client, as_user, sql, db, vapid, push_service):
+    subscribe(client, as_user("SO01"))
+    send(client, as_user("GM01"))
+    push_service["answer"] = FakeResponse(403, {}, "the VAPID credentials in the authorization header do not correspond to the credentials used to create the subscriptions")
+    assert svc.process_due(db)["gone"] == 1
+    assert sql("select active, revoked_reason from platform.push_subscriptions").one() == (False, "made with an older server key")

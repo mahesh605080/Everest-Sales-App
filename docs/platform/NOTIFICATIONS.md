@@ -20,7 +20,7 @@ This is the honest picture. "Tested here" means it was run in this project's tes
 | Will retry | A temporary failure; another attempt is scheduled. |
 | Could not be sent | Gave up, or the device registration is no longer valid. The reason is recorded. |
 | Expired unsent | Its time ran out before it could be sent. |
-| Held back | The person muted this kind, or got too many in the last hour. |
+| Push held back | The person muted this kind, or was already pushed too many in the last hour. The notification is still in their inbox. |
 
 ## Capability matrix
 
@@ -48,10 +48,13 @@ If instant delivery to closed Android apps becomes necessary, the choices are: (
 
 - It posts only to known browser push services (`PUSH_ENDPOINT_HOSTS`) and to Apple. A made-up subscription cannot make it call another address.
 - A device registration belongs to the login it was made under. Log out, a password change, an administrator ending the session, or expiry stops push to that device, also for messages already queued.
-- A shared browser follows whoever is logged in now.
-- A push carries the title, text, an in-app path and a one-time report-back token. Nothing else. A tap can only open a page of this site or app.
-- People choose: push on or off, kinds to mute, quiet hours (Nepal time). Urgent messages pass quiet hours and the hourly limit; they do not pass a mute.
-- At most `NOTIFY_MAX_PER_USER_PER_HOUR` (30) notifications per person per hour; more are held back and reported as such.
+- A shared browser follows whoever is logged in now. Anything still queued for the previous person on that browser is withdrawn, not shown to the next.
+- A push carries the title, text, kind, an in-app path, an icon path, the notification's id and a report-back token that is good for that one delivery only. Nothing else. A link is accepted only if it is a plain path of this site (no second slash, backslash, space or control character), and the service worker and the phone app check again before opening it.
+- Chat pushes carry the message text to the member's own devices. In the notification history they appear only as "Chat message", without the text, and only to whoever manages notifications.
+- A notification is never lost, but after a crash or restart in the middle of sending, the few pushes that were on the wire at that moment are sent again. The device shows one (same tag; same collapse id on iPhone).
+- People choose: push on or off, kinds to mute, quiet hours (Nepal time). These only ever hold back **push**; the inbox always gets everything. Urgent messages pass quiet hours and the hourly limit; they do not pass a mute. Marking a message urgent needs the broadcast permission.
+- At most `NOTIFY_MAX_PER_USER_PER_HOUR` (30) pushes per person per hour; more are held back (push only) and reported as such.
+- A sender sees and can withdraw only what they sent. What the system sent is visible to whoever manages notifications.
 
 ## Setting it up
 

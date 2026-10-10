@@ -91,7 +91,7 @@ The same list, with request and response shapes and a try-it page, is served at 
 | GET | `/api/v1/admin/push/subscriptions` | Every registered device, without keys or full addresses |
 | POST | `/api/v1/admin/push/subscriptions/{sub_id}/disable` | Stop push to one device |
 | POST | `/api/v1/notifications` | Send now or schedule. Send an Idempotency-Key header so a repeated request does not send twice. |
-| GET | `/api/v1/notifications` | History of what was sent, newest first |
+| GET | `/api/v1/notifications` | History of what was sent, newest first. Senders see their own; managers see everything, and the system's with source=system or all. |
 | POST | `/api/v1/notifications/ack` | Called by the device when it has shown a push, and again when it is tapped. The token inside the push is the permission. |
 | GET | `/api/v1/notifications/preferences` | This person's notification settings |
 | PUT | `/api/v1/notifications/preferences` | Set push on or off, muted kinds and quiet hours |

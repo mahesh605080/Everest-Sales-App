@@ -11,4 +11,12 @@ Tick only what has been built **and** tested. Each phase has a report in this fo
 - [x] **Phase 6 — Notifications.** Engine and queue with honest states, Web Push (VAPID, encrypted), APNs sender, device registry tied to the login, preferences, send screen, service worker, mobile integration, capability matrix (`NOTIFICATIONS.md`). Backend 104 tests, web 192, mobile 24. `REPORT-phase-6.md`. Not run against a real push service, Apple, or a real phone.
 - [x] **Phase 7 — Jobs, scheduler, monitoring.** Built-in job kinds only, retries, duplicate protection, schedules, clean-up jobs, the web app's alert rules on a schedule, ten health rules with self-closing alerts, request figures, overview. Backend 124 tests. `REPORT-phase-7.md`.
 - [x] **Phase 8 — Admin console and documentation.** Console with seven tabs in the web app (overview, logins, jobs, notifications, storage, database, live and requests), all-sessions view with end-login, audit search; `README.md`, `INTEGRATION.md`, `API-REFERENCE.md` (generated, 82 endpoints), `OPERATIONS.md`. Backend 125 tests, web 195. `REPORT-phase-8.md`.
-- [ ] **Phase 9 — Hardening, backup and restore, deployment.**
+- [x] **Phase 9 — Hardening, performance, backup and restore, deployment.** Threat model and go-live checklist (`SECURITY.md`), cross-cutting attack tests, flood and per-person limits, idle logout for browsers, dependency audit (web brought to zero findings), load test (`PERFORMANCE.md`), backup with test restore and non-destructive restore (`DEPLOYMENT.md`), an independent code review with 19 findings fixed. Backend 152 tests, web 198, mobile 24. `REPORT-phase-9.md`.
+
+## Not done, and why
+
+- [ ] **Docker images built and started.** The build machine could not download base images. The compose file passes `docker compose config`.
+- [ ] **A push sent through a real push service or to Apple; the phone app run on a phone.** No route from the build machine; no device.
+- [ ] **Instant delivery to a closed Android app.** Needs Google's messaging service, which was excluded on purpose.
+- [ ] **Two-step login, backup encryption, virus scanning, more than one service process for live connections.** Out of scope for these phases; listed in `SECURITY.md` and the reports.
+- [ ] **Code pushed to the mobile repository.** GitHub access to `Everest-Sales-app-Mobile` was refused; the code is on branch `mobile-app-backup` of the web repository.

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     max_body_bytes: int = Field(1_048_576, alias="MAX_BODY_BYTES", ge=1024)  # uploads get their own, larger limit
     db_pool_size: int = Field(5, alias="DB_POOL_SIZE", ge=1, le=50)
     statement_timeout_ms: int = Field(15000, alias="DB_STATEMENT_TIMEOUT_MS", ge=100)
+    rate_limit_per_minute: int = Field(1200, alias="RATE_LIMIT_PER_MINUTE", ge=0)  # requests one address may make in a minute; 0 switches the limit off
     trusted_proxy: bool = Field(True, alias="TRUSTED_PROXY")  # take the client address from the reverse proxy's header
     log_level: str = Field("INFO", alias="LOG_LEVEL")
     refresh_grace_seconds: int = Field(30, alias="REFRESH_GRACE_SECONDS", ge=0, le=300)  # a refresh whose answer was lost may be repeated this long
@@ -45,6 +46,7 @@ class Settings(BaseSettings):
     notify_max_attempts: int = Field(6, alias="NOTIFY_MAX_ATTEMPTS", ge=1, le=12)
     notify_per_user_hour: int = Field(30, alias="NOTIFY_MAX_PER_USER_PER_HOUR", ge=1)  # more than this to one person in an hour is held back
     notify_batch: int = Field(50, alias="NOTIFY_BATCH", ge=1, le=500)
+    notify_parallel: int = Field(8, alias="NOTIFY_PARALLEL", ge=1, le=32)  # how many pushes are on the wire at the same moment
     # Browsers hand us the address of their vendor's push service. We only ever post to these hosts, so a made-up subscription cannot make the server call somewhere else.
     push_hosts: str = Field("fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,notify.windows.com,push.apple.com", alias="PUSH_ENDPOINT_HOSTS")
     # The web app has alert rules that need a regular nudge. With both set, the scheduler calls it; the address is never taken from a request.

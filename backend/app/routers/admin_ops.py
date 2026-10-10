@@ -203,6 +203,7 @@ def overview(_: Principal = Depends(super_admin), db: Session = Depends(get_db))
         "database": {"ok": True, "bytes": db.execute(text("select pg_database_size(current_database())")).scalar(), "connections": dict(conns), "migrations": migration_status(db)},
         "worker": worker.status(), "jobs": svc.counts(db), "notifications": notify_svc.queue_stats(db), "realtime": hub.snapshot(),
         "storage": {"files": f["files"], "bytes": int(f["bytes"]), "waiting_purge_bytes": int(f["waiting_purge"]), "disk_free_bytes": disk.free, "disk_total_bytes": disk.total},
+        "backup": monitor.backup_state(db),
         "api": metrics.snapshot(15),
         "alerts": [alert_view(a) for a in db.scalars(select(Alert).where(Alert.resolved_at.is_(None)).order_by(Alert.severity, Alert.last_seen_at.desc()))],
         "configuration": {"problems": s.problems(), "channels": {"webpush": s.webpush_ready, "apns": s.apns_ready, "email": bool(s.smtp_host), "web_alert_rules": s.web_cron_ready}},

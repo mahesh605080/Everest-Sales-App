@@ -14,7 +14,7 @@ function diff(b: any, a: any): string {
 export default async function Audit({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
   const s = await getSession();
   if (!can(s, 'audit.view')) return <section className="card"><h2>No access</h2><p className="sub">Your role does not include the audit log.</p></section>;
-  const sp = await searchParams, page = Math.max(1, Number(sp.page) || 1), size = 50, find = String(sp.q || '').trim().slice(0, 60);
+  const sp = await searchParams, page = Math.max(1, Number(sp.page) || 1), size = 50, find = String(sp.q || '').replace(/\0/g, '').trim().slice(0, 60);
   // The search text is only ever a parameter; it never becomes part of the SQL.
   const where = find ? `where user_name ilike $1 or action ilike $1 or entity ilike $1 or entity_id = $2 or ip = $2` : '', args = find ? [`%${find.replace(/[%_\\]/g, m => '\\' + m)}%`, find] : [];
   const total = (await q1<any>(`select count(*)::int n from audit_logs ${where}`, args))!.n;

@@ -32,6 +32,7 @@ services:
       DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD:-Everest@123}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       CRON_SECRET: ${CRON_SECRET:-}   # lets the platform's scheduler run the alert rules; 16+ random characters
+      SESSION_IDLE_DAYS: ${SESSION_IDLE_DAYS:-7}
       TZ: Asia/Kathmandu
 
   # Platform services in Python (sessions, realtime, files, notifications, jobs). Same database, its own schema "platform".
@@ -57,6 +58,14 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       WEB_INTERNAL_URL: http://app:3000
       CRON_SECRET: ${CRON_SECRET:-}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-30}
+      FILE_MAX_BYTES: ${FILE_MAX_BYTES:-10485760}
+      FILE_QUOTA_BYTES: ${FILE_QUOTA_BYTES:-209715200}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-1200}
+      NOTIFY_MAX_ATTEMPTS: ${NOTIFY_MAX_ATTEMPTS:-6}
+      NOTIFY_MAX_PER_USER_PER_HOUR: ${NOTIFY_MAX_PER_USER_PER_HOUR:-30}
+      NOTIFY_PARALLEL: ${NOTIFY_PARALLEL:-8}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
@@ -72,6 +81,29 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health/ready').status==200 else 1)"]
       interval: 15s
       retries: 10
+
+  # Backups. Not started with the rest; run by hand or from the server's cron (see docs/platform/DEPLOYMENT.md):
+  #   docker compose run --rm backup                                     one backup into ./backups
+  #   docker compose run --rm backup sh /scripts/verify-backup.sh        restore the newest into a throw-away database and compare
+  backup:
+    image: postgres:16-alpine
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://sfa:${DB_PASSWORD}@db:5432/sfa
+      FILES_DIR: /data/files
+      BACKUP_DIR: /backups
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      RESTORE_REPLACE: ${RESTORE_REPLACE:-}
+      TZ: Asia/Kathmandu
+    volumes:
+      - filedata:/data/files
+      - ./backups:/backups
+      - ./scripts:/scripts:ro
+    entrypoint: []
+    command: ["sh", "/scripts/backup.sh"]
 
   # Gives the site an https address with an automatic certificate. Point your domain's DNS at this server first.
   # /api/v1 and /ws go to the platform service; everything else to the web app.

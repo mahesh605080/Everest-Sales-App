@@ -46,7 +46,7 @@ def create_app() -> FastAPI:
     if s.origins:
         app.add_middleware(CORSMiddleware, allow_origins=s.origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                            allow_headers=["authorization", "content-type", "x-csrf-token", "idempotency-key"], max_age=600)
-    app.add_middleware(Envelope, max_body=s.max_body_bytes, big_body_prefixes=(f"{API}/files",))
+    app.add_middleware(Envelope, max_body=s.max_body_bytes, big_bodies={("POST", f"{API}/files"): s.file_max_bytes + 65536}, per_minute=s.rate_limit_per_minute, trusted_proxy=s.trusted_proxy)
     return app
 
 

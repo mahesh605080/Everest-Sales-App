@@ -10,13 +10,18 @@ self.addEventListener('fetch', e => {
 
 // Push: the server sends an encrypted message through the browser's own push service; this shows it even when no tab is open.
 // The text comes only from our server (the browser checks the sender's key), and a tap can only lead to a page of this site.
-const inside = u => (typeof u === 'string' && u.startsWith('/') && !u.startsWith('//') ? u : '/dashboard');
+// Decided the way the browser itself would read the address: resolved against this site, it must still be this site.
+const inside = (u, fallback = '/dashboard') => {
+  if (typeof u !== 'string' || !u.startsWith('/')) return fallback;
+  try { const x = new URL(u, self.location.origin); return x.origin === self.location.origin ? x.pathname + x.search + x.hash : fallback; } catch { return fallback; }
+};
 const ack = (token, clicked) => (token ? fetch('/api/v1/notifications/ack', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, clicked }), keepalive: true }).catch(() => {}) : Promise.resolve());
 self.addEventListener('push', e => {
   let m = {};
   try { m = e.data ? e.data.json() : {}; } catch { m = { title: 'Everest SFA', body: e.data ? e.data.text() : '' }; }
+  if (!m || typeof m !== 'object') m = {};
   const shown = self.registration.showNotification(String(m.title || 'Everest SFA').slice(0, 150), {
-    body: String(m.body || '').slice(0, 500), icon: inside(m.icon) === '/dashboard' ? '/icon-192.png' : m.icon, badge: '/icon-192.png', tag: m.id || undefined, data: { url: inside(m.url), ack: m.ack || null },
+    body: String(m.body || '').slice(0, 500), icon: inside(m.icon, '/icon-192.png'), badge: '/icon-192.png', tag: m.id || undefined, data: { url: inside(m.url), ack: m.ack || null },
   });
   e.waitUntil(shown.then(() => ack(m.ack, false)));   // "confirmed" on the server means exactly this: the browser showed it
 });

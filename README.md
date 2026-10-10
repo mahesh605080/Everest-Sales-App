@@ -76,7 +76,7 @@ These defaults were chosen while building; set them to the company's own policy 
 
 ## Checks
 
-`npm run smoke` runs 157 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
+`npm run smoke` runs 196 end-to-end checks over the real API, with both services running, against a database freshly loaded with `npm run seed -- --sample`. The platform service has its own 142 tests (`backend/scripts/test.sh`). The phone app has 24.
 
 ## Run it on your own computer (for a developer)
 
@@ -103,26 +103,24 @@ Needs a Linux server with Docker, and a domain name whose DNS points at the serv
 
 ```bash
 cp .env.example .env
-# edit .env: DB_PASSWORD, AUTH_SECRET (openssl rand -hex 32), DOMAIN, DEFAULT_USER_PASSWORD
+# edit .env: DB_PASSWORD, AUTH_SECRET (openssl rand -hex 32), CRON_SECRET, DOMAIN, DEFAULT_USER_PASSWORD
 docker compose up -d --build
 ```
 
-This starts PostgreSQL, the app, and Caddy, which gets an https certificate for `DOMAIN` automatically.
-The app applies database changes and creates the roles, settings and the first admin on every start; it never overwrites existing data.
+This starts PostgreSQL, the web app, the platform service, and Caddy, which gets an https certificate for `DOMAIN` automatically. Each service applies its own database changes on every start; neither overwrites existing data.
 
-The Docker files were written but not run in the build environment (Docker was not available there). The app itself was built and tested against PostgreSQL 16 directly. Have the person who deploys check the first `docker compose up`.
+**https is required**, not optional: browsers allow location sharing and push notifications only on an https address.
 
-**https is required**, not optional: browsers only allow location sharing on an https address.
+The full guide, with backup, test restore, restore, upgrading and going back, is [`docs/platform/DEPLOYMENT.md`](docs/platform/DEPLOYMENT.md). Read its first table: the two services and the backup scripts were tested running directly on Linux; the Docker images themselves could not be built on the build machine, so the first `docker compose up` should be watched by someone who can read its output.
 
 ### Backup
 
-Run this every night from cron and copy the file to a second place:
-
 ```bash
-docker compose exec -T db pg_dump -U sfa sfa | gzip > /backups/sfa-$(date +%F).sql.gz
+docker compose run --rm backup                                   # database + uploaded files, with checksums
+docker compose run --rm backup sh /scripts/verify-backup.sh      # proves the newest backup can be restored
 ```
 
-Test a restore every few months: `gunzip -c file.sql.gz | docker compose exec -T db psql -U sfa sfa` on a spare machine.
+Schedule both from cron and copy `./backups` to another machine. Details in the deployment guide.
 
 ## Map provider
 
@@ -152,9 +150,9 @@ On each master page: Import → Download template → fill it → Upload. Rows a
 
 Use the customer codes from your accounting software as customer codes here. The outstanding/aging upload matches on them.
 
-## For the mobile app later
+## The business API
 
-Every screen uses the same JSON API the Android/iOS app will use. Log in with `POST /api/auth/login` and send the returned token as `Authorization: Bearer <token>`.
+The phone app (its own repository) and every screen here use this JSON API. A phone logs in through the platform service (`POST /api/v1/auth/login`, see `docs/platform/INTEGRATION.md`) and sends the token as `Authorization: Bearer <token>`; a browser uses the login cookie.
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -205,10 +203,14 @@ Everything about it is in [`docs/platform/`](docs/platform/README.md): how the p
 
 ## Known limits
 
-- Location sharing from the browser works only while the page is open and the screen is on, and a browser location can be faked. Background tracking and mock-location detection need the Android app, which is not built yet.
-- The app does not work offline.
+- Location sharing from the browser works only while the page is open and the screen is on, and a browser location can be faked. Background route recording is in the phone app.
+- The web app does not work offline. The phone app keeps orders, visits and collections made without a connection and sends them later.
+- **The phone app has never been installed on a real phone.** Its logic is unit-tested and its screens were checked in a browser preview.
+- **Push notifications have not been sent through a real push service or to a real device.** What each kind of device can and cannot receive is set out in `docs/platform/NOTIFICATIONS.md`; in short, a closed Android app is not woken instantly because Google's messaging service is deliberately not used.
+- **The Docker images have not been built.** See the deployment guide.
+- There is no two-step login. See `docs/platform/SECURITY.md` for this and the other open security points.
+- Live updates and chat run in one service process; that is enough for a few hundred people and is the first thing to change beyond that.
 - Company stock goes down when an order is marked dispatched in this app. Anything that leaves the godown another way (direct invoices, samples, breakage) is corrected only by the next stock upload, so upload stock regularly.
 - Suggested orders, bought-vs-sold and transfer suggestions need distributor stock reports not older than 45 days.
-- "Forgot password" is handled by the Admin setting a new password on the employee form.
+- A forgotten password is reset with a one-time code issued by an administrator (or by email once a mail server is configured).
 - Dates on forms are entered in AD.
-- The Docker files have not been run in the build environment.

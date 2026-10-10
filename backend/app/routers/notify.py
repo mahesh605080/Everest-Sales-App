@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -14,7 +14,7 @@ from ..errors import ApiError
 from ..models.auth import Device
 from ..models.notify import Delivery, Notification, NotifyPrefs, PushSubscription
 from ..services import notify as svc
-from ..services import push_senders
+from ..services import push_senders, ratelimit
 
 router = APIRouter(tags=["notifications"])
 
@@ -48,11 +48,15 @@ def subscribe(body: SubIn, p: Principal = Depends(current()), db: Session = Depe
             raise ApiError(422, "This is not the address of a known browser push service.", "invalid_request")
     elif not body.endpoint.isalnum():
         raise ApiError(422, "This is not a device token.", "invalid_request")
+    ratelimit.limit(db, f"push-sub:{p.id}", 60, 3600, "Too many device registrations. Try again later.")
     dev = db.scalar(select(Device).where(Device.user_id == p.id, Device.installation_id == body.installation_id)) if body.installation_id else None
     sub = db.scalar(select(PushSubscription).where(PushSubscription.endpoint == body.endpoint))
     if sub is None:
         sub = PushSubscription(endpoint=body.endpoint, channel=body.channel, user_id=p.id)
         db.add(sub)
+    elif sub.user_id != p.id:
+        # Somebody else is now logged in here. Whatever was still waiting for the previous person must not arrive on this screen.
+        db.execute(update(Delivery).where(Delivery.subscription_id == sub.id, Delivery.status.in_(["queued", "failed", "processing"])).values(status="skipped", last_error="another person logged in on that device", updated_at=func.now()))
     # A browser belongs to whoever is logged in on it now: the subscription moves with the login.
     sub.user_id, sub.channel, sub.device_id, sub.user_agent, sub.app_version = p.id, body.channel, dev.id if dev else None, client.user_agent, body.app_version
     sub.p256dh, sub.auth = (body.keys.p256dh, body.keys.auth) if body.keys else (None, None)
@@ -91,7 +95,8 @@ class AckIn(BaseModel):
 
 
 @router.post("/notifications/ack", summary="Called by the device when it has shown a push, and again when it is tapped. The token inside the push is the permission.")
-def ack(body: AckIn, db: Session = Depends(get_db)):
+def ack(body: AckIn, db: Session = Depends(get_db), client: Client = Depends(client_info)):
+    ratelimit.limit(db, f"ack:{client.ip}", 600, 60, "Too many requests.")   # no login is needed here, so the address is limited instead
     return {"ok": svc.confirm(db, body.token, body.clicked)}
 
 
@@ -152,59 +157,64 @@ class SendIn(BaseModel):
 
 
 def note_view(db: Session, n: Notification) -> dict:
+    private = n.category == "chat"   # a chat message is between its members; the record of its push shows that it happened, not what was said
     counts = dict(db.execute(select(Delivery.channel + ":" + Delivery.status, func.count()).where(Delivery.notification_id == n.id).group_by(Delivery.channel, Delivery.status)).all())
-    return {"id": str(n.id), "title": n.title, "body": n.body, "category": n.category, "url": n.url, "audience": n.audience, "priority": n.priority, "status": n.status, "source": n.source,
+    return {"id": str(n.id), "title": "Chat message" if private else n.title, "body": None if private else n.body, "category": n.category, "url": n.url, "audience": n.audience, "priority": n.priority, "status": n.status, "source": n.source,
             "scheduled_at": n.scheduled_at, "expires_at": n.expires_at, "created_at": n.created_at, "created_by": n.created_by, "deliveries": counts}
 
 
 @router.post("/notifications", summary="Send now or schedule. Send an Idempotency-Key header so a repeated request does not send twice.")
 def send(body: SendIn, p: Principal = Depends(current()), db: Session = Depends(get_db), idempotency_key: str | None = Header(None, max_length=100)):
-    aud = body.audience.model_dump(exclude_none=True)
-    svc.check_audience(p, aud)
+    aud = svc.clean_audience(body.audience.model_dump(exclude_none=True))
+    svc.check_audience(p, aud, body.priority)
+    ratelimit.limit(db, f"notify-send:{p.id}", 30, 600, "You have sent many notifications in a short time. Wait a few minutes.")
     if len(str(body.data)) > 2000:
         raise ApiError(413, "The extra data is too large (2 KB at most).", "too_large")
-    if body.icon and not body.icon.startswith("/"):
-        raise ApiError(422, "The icon must be a path on this site.", "invalid_request")
     n, created = svc.create(db, title=body.title, body=body.body, audience=aud, category=body.category, url=body.url, icon=body.icon, data=body.data, priority=body.priority,
                             scheduled_at=body.scheduled_at, expires_at=body.expires_at, idempotency_key=f"api:{p.id}:{idempotency_key}" if idempotency_key else None, created_by=p.id)
     return {**note_view(db, n), "duplicate": not created}
 
 
-def _note(db: Session, note_id: str) -> Notification:
+def _note(db: Session, note_id: str, p: Principal) -> Notification:
+    """A sender sees and acts on what they sent themselves. Everything else, including what the system sent, is for whoever manages notifications."""
     try:
         n = db.get(Notification, uuid.UUID(note_id))
     except ValueError:
         n = None
-    if n is None:
+    if n is None or (not p.can(svc.MANAGE) and (n.source != "manual" or n.created_by != p.id)):
         raise ApiError(404, "This notification does not exist.", "not_found")
     return n
 
 
-@router.get("/notifications", summary="History of what was sent, newest first")
-def history(_: Principal = Depends(require(svc.SEND, svc.MANAGE)), db: Session = Depends(get_db), source: str = Query("manual", pattern="^(manual|system|all)$"), limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0)):
+@router.get("/notifications", summary="History of what was sent, newest first. Senders see their own; managers see everything, and the system's with source=system or all.")
+def history(p: Principal = Depends(require(svc.SEND, svc.MANAGE)), db: Session = Depends(get_db), source: str = Query("manual", pattern="^(manual|system|all)$"), limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0)):
     q = select(Notification).order_by(Notification.created_at.desc()).limit(limit).offset(offset)
+    if not p.can(svc.MANAGE):
+        if source != "manual":
+            raise ApiError(403, "Only those who manage notifications can see what the system sent.", "forbidden")
+        q = q.where(Notification.created_by == p.id)
     if source != "all":
         q = q.where(Notification.source == source)
     return {"notifications": [note_view(db, n) for n in db.scalars(q)]}
 
 
 @router.get("/notifications/{note_id}", summary="One notification with every delivery attempt and its result")
-def detail(note_id: str, _: Principal = Depends(require(svc.SEND, svc.MANAGE)), db: Session = Depends(get_db)):
-    n = _note(db, note_id)
+def detail(note_id: str, p: Principal = Depends(require(svc.SEND, svc.MANAGE)), db: Session = Depends(get_db)):
+    n = _note(db, note_id, p)
     rows = db.execute(text(f"""select d.id, d.user_id, u.name as user_name, d.channel, d.status, d.attempts, d.provider_status, d.last_error, d.next_attempt_at, d.updated_at, d.confirmed_at, d.clicked_at
                                  from {SCHEMA}.deliveries d join public.users u on u.id = d.user_id where d.notification_id = :n order by u.name, d.channel limit 2000"""), {"n": n.id}).mappings().all()  # noqa: S608
     return {**note_view(db, n), "attempts": [dict(r) for r in rows]}
 
 
 @router.post("/notifications/{note_id}/cancel", summary="Cancel a scheduled notification, or withdraw the push not yet sent")
-def cancel(note_id: str, _: Principal = Depends(require(svc.SEND)), db: Session = Depends(get_db)):
-    n = _note(db, note_id)
+def cancel(note_id: str, p: Principal = Depends(require(svc.SEND, svc.MANAGE)), db: Session = Depends(get_db)):
+    n = _note(db, note_id, p)
     return {"status": n.status if n.status != "scheduled" else "cancelled", "withdrawn": svc.cancel(db, n)}
 
 
 @router.post("/notifications/{note_id}/retry", summary="Queue again the push deliveries that failed, gave up or expired")
-def retry(note_id: str, _: Principal = Depends(require(svc.MANAGE)), db: Session = Depends(get_db)):
-    return {"requeued": svc.retry(db, notification_id=_note(db, note_id).id)}
+def retry(note_id: str, p: Principal = Depends(require(svc.MANAGE)), db: Session = Depends(get_db)):
+    return {"requeued": svc.retry(db, notification_id=_note(db, note_id, p).id)}
 
 
 # ---------- administration ----------

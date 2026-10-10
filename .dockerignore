@@ -1,0 +1,12 @@
+# Keeps the web image small and stops files from this machine replacing what the build installs.
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+backend
+docs
+backups
+*.md
+tsconfig.tsbuildinfo

@@ -52,11 +52,14 @@ def send_webpush(sub, payload: dict, ttl: int, urgent: bool) -> Result:
     if not allowed_endpoint(sub.endpoint):
         return Result(ok=False, gone=True, error="endpoint is not a known push service")
     try:
-        r = webpush(subscription_info={"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}, data=json.dumps(payload, separators=(",", ":")),
+        r = webpush(subscription_info={"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}}, data=json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode(),
                     vapid_private_key=s.vapid_private_key, vapid_claims={"sub": s.vapid_subject}, ttl=max(0, ttl), headers={"Urgency": "high" if urgent else "normal"}, timeout=10)
         return _classify(r.status_code, r.headers.get("retry-after"), r.text)
     except WebPushException as e:
         if e.response is not None:
+            if e.response.status_code == 403:
+                # The push service says this subscription was made for a different server key (ours was changed). The browser makes a new one on its next visit.
+                return Result(ok=False, status=403, gone=True, error="made with an older server key")
             return _classify(e.response.status_code, e.response.headers.get("retry-after"), e.response.text)
         return Result(ok=False, retry=True, error="could not reach the push service")
     except Exception as e:  # bad keys from the browser, network trouble
@@ -87,7 +90,8 @@ def send_apns(sub, payload: dict, ttl: int, urgent: bool) -> Result:
     try:
         with httpx.Client(http2=True, timeout=10) as c:
             r = c.post(f"https://{host}/3/device/{sub.endpoint}", json=body, headers={"authorization": f"bearer {_apns_jwt()}", "apns-topic": s.apns_topic, "apns-push-type": "alert",
-                                                                                     "apns-priority": "10" if urgent else "5", "apns-expiration": str(int(time.time()) + max(0, ttl))})
+                                                                                     "apns-priority": "10" if urgent else "5", "apns-expiration": str(int(time.time()) + max(0, ttl)),
+                                                                                     **({"apns-collapse-id": str(payload["id"])[:64]} if payload.get("id") else {})})   # a repeat replaces, never doubles
     except httpx.HTTPError:
         return Result(ok=False, retry=True, error="could not reach Apple's push service")
     if r.status_code == 200:

@@ -17,7 +17,7 @@ def test_ready_reports_both_migration_tracks(client):
     body = r.json()
     assert r.status_code == 200, body
     assert body["database"] == "ok" and body["migrations"]["platform"]["up_to_date"] is True
-    assert body["migrations"]["web"]["last_applied"].startswith("025_")  # the web app's tables are present and untouched
+    assert body["migrations"]["web"]["last_applied"].startswith("026_")  # the web app's tables are present and untouched
 
 
 def test_every_response_has_request_id_and_security_headers(client):

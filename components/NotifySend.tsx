@@ -5,7 +5,7 @@ import { call, toast } from '@/lib/ui';
 type Opt = { id?: number; key?: string; name: string; role?: string };
 const CATS: [string, string][] = [['general', 'General'], ['announcements', 'Announcement'], ['orders', 'Orders and credit'], ['approvals', 'Approvals'], ['collections', 'Collections'], ['stock', 'Stock and expiry']];
 // The words say exactly how far each message got. "Accepted" is the push service taking it; only "Shown on device" is the device itself confirming.
-const STATE: Record<string, string> = { 'inapp:stored': 'In the inbox', 'inapp:skipped': 'Held back', queued: 'Waiting to send', processing: 'Sending', accepted: 'Accepted by push service', confirmed: 'Shown on device', failed: 'Will retry', dead: 'Could not be sent', expired: 'Expired unsent', skipped: 'Withdrawn' };
+const STATE: Record<string, string> = { 'inapp:stored': 'In the inbox', 'push:skipped': 'Push held back (muted or too many)', queued: 'Waiting to send', processing: 'Sending', accepted: 'Accepted by push service', confirmed: 'Shown on device', failed: 'Will retry', dead: 'Could not be sent', expired: 'Expired unsent', skipped: 'Withdrawn' };
 const when = (v: string) => new Date(v).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kathmandu' });
 const label = (k: string) => STATE[k] || STATE[k.split(':')[1]] || k;
 const fold = (d: Record<string, number>) => { const out: Record<string, number> = {}; for (const [k, n] of Object.entries(d)) { const l = label(k); out[l] = (out[l] || 0) + n; } return Object.entries(out); };
@@ -54,7 +54,7 @@ export default function NotifySend({ broadcast, manage, people, roles, areas, re
       {f.kind === 'region' && <div className="fld"><label htmlFor="n-region">Region</label><select id="n-region" value={f.region} onChange={e => set('region', e.target.value)}>{regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>}
       <div className="g" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
         <div className="fld"><label htmlFor="n-at">Send later (optional)</label><input id="n-at" type="datetime-local" value={f.at} onChange={e => set('at', e.target.value)} /><small>Leave empty to send now.</small></div>
-        <div className="fld"><label className="chk"><input type="checkbox" checked={f.urgent} onChange={e => set('urgent', e.target.checked)} /> Urgent</label><small>Goes through even in a person's quiet hours. Use rarely.</small></div>
+        {broadcast && <div className="fld"><label className="chk"><input type="checkbox" checked={f.urgent} onChange={e => set('urgent', e.target.checked)} /> Urgent</label><small>Goes through even in a person's quiet hours. Use rarely.</small></div>}
       </div>
       <div><button className="btn primary" disabled={busy}>{busy ? 'Sending…' : f.at ? 'Schedule' : 'Send'}</button></div>
     </form>
@@ -71,7 +71,7 @@ export default function NotifySend({ broadcast, manage, people, roles, areas, re
     {open && <section className="card">
       <div className="hd"><h2>{open.title}</h2><div>{manage && open.attempts.some((a: any) => ['dead', 'failed', 'expired'].includes(a.status) && a.channel !== 'inapp') && <button className="btn sm" onClick={() => act(`/api/v1/notifications/${open.id}/retry`, 'Queued again.')}>Send failed ones again</button>} <button className="btn sm" onClick={() => setOpen(null)}>Close</button></div></div>
       <div className="tbl"><table><thead><tr><th>Person</th><th>Where</th><th>Result</th><th className="r">Tries</th><th>Note</th></tr></thead>
-        <tbody>{open.attempts.map((a: any) => <tr key={a.id}><td>{a.user_name}</td><td>{a.channel === 'inapp' ? 'Inbox' : a.channel === 'webpush' ? 'Browser push' : 'iPhone push'}</td>
+        <tbody>{open.attempts.map((a: any) => <tr key={a.id}><td>{a.user_name}</td><td>{a.channel === 'inapp' ? 'Inbox' : a.channel === 'webpush' ? 'Browser push' : a.channel === 'apns' ? 'iPhone push' : 'Push'}</td>
           <td>{label(`${a.channel}:${a.status}`)}{a.clicked_at ? ' · opened' : ''}</td><td className="r num">{a.channel === 'inapp' ? '' : a.attempts}</td><td className="sub">{a.last_error || ''}</td></tr>)}</tbody></table></div>
     </section>}
   </>;

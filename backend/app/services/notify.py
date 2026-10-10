@@ -5,7 +5,10 @@ import hashlib
 import hmac
 import logging
 import random
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, time, timedelta
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, text, update
@@ -46,11 +49,51 @@ def resolve_audience(db: Session, a: dict) -> list[int]:
     raise ApiError(422, "Audience must be users, role, area, region or all.", "invalid_request")
 
 
-def check_audience(p: Principal, a: dict):
+def clean_audience(a: dict) -> dict:
+    """The audience in its one stored form, or a refusal. Done before anything is saved, so a notification that cannot be delivered never enters the queue."""
+    bad = ApiError(422, "Audience must be users (with ids), role (with key), area or region (with id), or all.", "invalid_request")
+    kind = a.get("kind") if isinstance(a, dict) else None
+    try:
+        if kind == "users":
+            ids = sorted({int(x) for x in a.get("ids") or [] if not isinstance(x, bool)})[:5000]
+            if not ids:
+                raise bad
+            return {"kind": "users", "ids": ids}
+        if kind == "role":
+            key = str(a.get("key") or "")
+            if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", key):
+                raise bad
+            return {"kind": "role", "key": key}
+        if kind in ("area", "region"):
+            if a.get("id") is None or isinstance(a.get("id"), bool):
+                raise bad
+            return {"kind": kind, "id": int(a["id"])}
+        if kind == "all":
+            return {"kind": "all"}
+    except (TypeError, ValueError) as e:
+        raise bad from e
+    raise bad
+
+
+MANY_PEOPLE = 200   # naming more people than this by id is a broadcast in all but name
+
+
+def check_audience(p: Principal, a: dict, priority: int = 5):
     if not p.can(SEND):
         raise ApiError(403, "Your role does not allow sending notifications.", "forbidden")
-    if a.get("kind") != "users" and not p.can(BROADCAST):
-        raise ApiError(403, "Sending to a whole role, area, region or everyone needs the broadcast permission.", "forbidden")
+    wide = a.get("kind") != "users" or len(a.get("ids") or []) > MANY_PEOPLE
+    if wide and not p.can(BROADCAST):
+        raise ApiError(403, "Sending to a whole role, area, region, everyone or more than 200 people needs the broadcast permission.", "forbidden")
+    if priority <= 1 and not p.can(BROADCAST):
+        raise ApiError(403, "Urgent notifications, which pass people's quiet hours, need the broadcast permission.", "forbidden")
+
+
+_PATH = re.compile(r"/(?![/\\])[^\\\x00-\x20]*")
+
+
+def safe_path(v: str | None) -> bool:
+    """A path inside the app and nothing a browser could read as another site: one leading slash, no backslash, no spaces or control characters."""
+    return bool(v) and len(v) <= 300 and bool(_PATH.fullmatch(v))
 
 
 def prefs_of(db: Session, user_id: int) -> NotifyPrefs:
@@ -91,11 +134,18 @@ def create(db: Session, *, title: str, body: str | None, audience: dict, categor
             return had, False
     if category not in CATEGORIES:
         raise ApiError(422, f"Category must be one of: {', '.join(CATEGORIES)}.", "invalid_request")
-    if url and not (url.startswith("/") and not url.startswith("//")):
+    if url and not safe_path(url):
         raise ApiError(422, "The link must be a path inside the app, such as /orders.", "invalid_request")
+    if icon and not safe_path(icon):
+        raise ApiError(422, "The icon must be a path on this site.", "invalid_request")
+    audience = clean_audience(audience)
     if scheduled_at and scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=UTC)
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
     later = bool(scheduled_at and scheduled_at > now() + timedelta(seconds=5))
+    if expires_at and expires_at <= (scheduled_at if later else now()):
+        raise ApiError(422, "The expiry time must be later than the time it is sent.", "invalid_request")
     n = Notification(title=title.strip()[:150], body=(body or "").strip()[:500] or None, category=category, url=url, icon=icon, data=data or {}, audience=audience, priority=priority,
                      status="scheduled" if later else "queued", scheduled_at=scheduled_at if later else None,
                      expires_at=expires_at or ((scheduled_at if later else now()) + DEFAULT_TTL), idempotency_key=idempotency_key, created_by=created_by, source=source)
@@ -107,14 +157,17 @@ def create(db: Session, *, title: str, body: str | None, audience: dict, categor
 
 
 def fan_out(db: Session, n: Notification) -> dict:
-    """One delivery row per person and channel. The in-app inbox is written here; push is queued for the worker."""
+    """The in-app inbox is written here, always; push is queued for the worker, one row per device.
+    Muting a kind, quiet hours and the hourly limit only ever hold back push. Nothing a person was sent is missing from their inbox."""
     s = get_settings()
     users = resolve_audience(db, n.audience)
     counts = {"people": len(users), "stored": 0, "push_queued": 0, "skipped": 0}
     if not users:
         n.status, n.fanned_out_at = "done", now()
         return counts
-    recent = dict(db.execute(select(Delivery.user_id, func.count(func.distinct(Delivery.notification_id))).where(Delivery.user_id.in_(users), Delivery.created_at > now() - timedelta(hours=1)).group_by(Delivery.user_id)).all())
+    # pushes really queued for each person in the last hour; rows that were held back do not count against them
+    pushed = dict(db.execute(select(Delivery.user_id, func.count(func.distinct(Delivery.notification_id))).where(
+        Delivery.user_id.in_(users), Delivery.created_at > now() - timedelta(hours=1), Delivery.channel != "inapp", Delivery.status != "skipped").group_by(Delivery.user_id)).all())
     subs: dict[int, list[PushSubscription]] = {}
     for sub in db.scalars(select(PushSubscription).where(PushSubscription.user_id.in_(users), PushSubscription.active)):
         if not login_ended(db, sub):
@@ -122,20 +175,21 @@ def fan_out(db: Session, n: Notification) -> dict:
     prefs = {p.user_id: p for p in db.scalars(select(NotifyPrefs).where(NotifyPrefs.user_id.in_(users)))}
     for uid in users:
         p = prefs.get(uid) or NotifyPrefs(user_id=uid, push_enabled=True, muted_categories=[])
-        skip = "muted by the person" if n.category in (p.muted_categories or []) else "held back: too many notifications in the last hour" if n.priority > 1 and recent.get(uid, 0) >= s.notify_per_user_hour else None
-        if skip:
-            db.add(Delivery(notification_id=n.id, user_id=uid, channel="inapp", status="skipped", last_error=skip))
-            counts["skipped"] += 1
-            continue
         if n.source == "manual":  # a system notification is already in the inbox: the web app wrote it
-            db.execute(text("insert into public.notifications(user_id, title, body, link, origin) values (:u, :t, :b, :l, 'engine')"), {"u": uid, "t": n.title, "b": n.body, "l": n.url or "/dashboard"})
+            db.execute(text("insert into public.notifications(user_id, title, body, link, origin, pushed_at) values (:u, :t, :b, :l, 'engine', now())"), {"u": uid, "t": n.title, "b": n.body, "l": n.url or "/dashboard"})
             emit(db, f"user:{uid}", "notification", {"title": n.title, "body": n.body, "link": n.url or "/dashboard", "category": n.category})
             db.add(Delivery(notification_id=n.id, user_id=uid, channel="inapp", status="stored"))
             counts["stored"] += 1
-        if not p.push_enabled:
+        mine = subs.get(uid, [])
+        if not p.push_enabled or not mine:
+            continue
+        hold = "muted by the person" if n.category in (p.muted_categories or []) else "held back: too many notifications in the last hour" if n.priority > 1 and pushed.get(uid, 0) >= s.notify_per_user_hour else None
+        if hold:
+            db.add(Delivery(notification_id=n.id, user_id=uid, channel="push", status="skipped", last_error=hold))
+            counts["skipped"] += 1
             continue
         wait = None if n.priority <= 1 else quiet_until(p, now())
-        for sub in subs.get(uid, []):
+        for sub in mine:
             db.add(Delivery(notification_id=n.id, user_id=uid, channel=sub.channel, subscription_id=sub.id, status="queued", next_attempt_at=wait or now()))
             counts["push_queued"] += 1
     n.status, n.fanned_out_at = "done", now()
@@ -144,10 +198,18 @@ def fan_out(db: Session, n: Notification) -> dict:
 
 
 def release_scheduled(db: Session) -> int:
+    """Sends what has come due. One that cannot be sent is cancelled with the reason in the log; it must never hold up the others or the rest of the worker's round."""
     due = db.scalars(select(Notification).where(Notification.status == "scheduled", Notification.scheduled_at <= now()).with_for_update(skip_locked=True).limit(50)).all()
+    done = 0
     for n in due:
-        fan_out(db, n)
-    return len(due)
+        try:
+            with db.begin_nested():
+                fan_out(db, n)
+            done += 1
+        except Exception:
+            log.exception("a scheduled notification could not be sent and was cancelled", extra={"notification": str(n.id)})
+            db.execute(update(Notification).where(Notification.id == n.id).values(status="cancelled"))
+    return done
 
 
 def cancel(db: Session, n: Notification) -> int:
@@ -164,21 +226,24 @@ _CATEGORY_BY_LINK = {"/orders": "orders", "/credit": "orders", "/booklets": "app
 
 
 def ingest_system(db: Session, limit: int = 200) -> int:
-    """The web app writes its notifications (order approved, booklet waiting ...) straight into the inbox. Pick up the new ones and queue push for them."""
-    cur = db.get(Setting, "notify.inbox_cursor", with_for_update=True)
-    top = db.execute(text("select coalesce(max(id), 0) from public.notifications")).scalar_one()
-    if cur is None:  # first run: start from now, do not push history
-        db.add(Setting(key="notify.inbox_cursor", value=str(top), label="Last inbox row handed to the push queue"))
+    """The web app writes its notifications (order approved, booklet waiting ...) straight into the inbox. Pick up the new ones and queue push for them.
+    Each inbox row carries its own "handed over" mark, so a row whose transaction finished late is still picked up; a position counter would step over it."""
+    started = db.get(Setting, "notify.inbox_cursor", with_for_update=True)
+    if started is None:  # first run: start from now, do not push history
+        db.execute(text("update public.notifications set pushed_at = now() where pushed_at is null"))
+        db.add(Setting(key="notify.inbox_cursor", value="started", label="Push for the web app's own notifications is switched on"))
         return 0
-    rows = db.execute(text("select id, user_id, title, body, link, origin from public.notifications where id > :c order by id limit :l"), {"c": int(cur.value), "l": limit}).mappings().all()
-    made = 0
+    if started.value.isdigit():  # written by an earlier version that kept a position: everything up to it was already handed over
+        db.execute(text("update public.notifications set pushed_at = now() where pushed_at is null and id <= :c"), {"c": int(started.value)})
+        started.value = "started"
+    rows = db.execute(text("select id, user_id, title, body, link from public.notifications where pushed_at is null and origin is null order by id limit :l for update skip locked"), {"l": limit}).mappings().all()
     for r in rows:
-        if r["origin"] is None:  # rows marked 'engine' were written by a manual send and are already being delivered
-            create(db, title=r["title"], body=r["body"], audience={"kind": "users", "ids": [r["user_id"]]}, category=_CATEGORY_BY_LINK.get(r["link"] or "", "general"),
-                   url=r["link"] if (r["link"] or "").startswith("/") else None, source="system", idempotency_key=f"inbox:{r['id']}")
-            made += 1
-        cur.value = str(r["id"])
-    return made
+        link = r["link"] if safe_path(r["link"]) else None
+        create(db, title=r["title"] or "Notification", body=r["body"], audience={"kind": "users", "ids": [r["user_id"]]}, category=_CATEGORY_BY_LINK.get(r["link"] or "", "general"),
+               url=link, source="system", idempotency_key=f"inbox:{r['id']}")
+    if rows:
+        db.execute(text("update public.notifications set pushed_at = now() where id = any(:ids)"), {"ids": [r["id"] for r in rows]})
+    return len(rows)
 
 
 # ---------- sending ----------
@@ -222,9 +287,23 @@ def claim_due(db: Session, limit: int) -> list[int]:
     return ids
 
 
+def _send_one(job: tuple) -> push_senders.Result:
+    """The network step for one delivery. Runs in a worker thread and touches nothing but its own arguments."""
+    channel, sub, payload, ttl, urgent, did = job
+    try:
+        return push_senders.SENDERS[channel](sub, payload, ttl, urgent)
+    except Exception:
+        log.exception("push sender crashed", extra={"delivery": did})
+        return push_senders.Result(ok=False, retry=True, error="internal error while sending")
+
+
 def process_due(db: Session, limit: int | None = None) -> dict:
+    """Takes a batch of due deliveries, hands them to the push services several at a time, and records each result the moment it is known.
+    Waiting on the network is done side by side; the database work stays on this one connection.
+    If the process dies mid-batch, the pushes still on the wire are sent again after the restart (the device shows one: same tag). At-least-once, never lost."""
     s = get_settings()
     out = {"accepted": 0, "failed": 0, "dead": 0, "expired": 0, "gone": 0}
+    ready: list[tuple] = []   # (delivery id, job for the sender)
     for did in claim_due(db, limit or s.notify_batch):
         d = db.get(Delivery, did)
         n = db.get(Notification, d.notification_id)
@@ -235,32 +314,60 @@ def process_due(db: Session, limit: int | None = None) -> dict:
         elif sub is None or not sub.active:
             d.status, d.last_error = "dead", "the device is no longer registered"
             out["dead"] += 1
+        elif sub.user_id != d.user_id:  # somebody else has logged in on that browser since this was queued: it is not theirs to see
+            d.status, d.last_error = "dead", "another person is now logged in on that device"
+            out["dead"] += 1
         elif login_ended(db, sub):  # logged out or locked out between queueing and sending: nothing may reach that screen
             d.status, d.last_error, sub.active, sub.revoked_reason = "dead", "the login on that device has ended", False, "login ended"
             out["dead"] += 1
         else:
             ttl = int((n.expires_at - now()).total_seconds()) if n.expires_at else 86400
             payload = {"id": str(n.id), "title": n.title, "body": n.body, "url": n.url or "/dashboard", "icon": n.icon, "category": n.category, "ack": _ack_token(d.id)}
-            try:
-                r = push_senders.SENDERS[d.channel](sub, payload, ttl, n.priority <= 2)
-            except Exception:
-                log.exception("push sender crashed", extra={"delivery": d.id})
-                r = push_senders.Result(ok=False, retry=True, error="internal error while sending")
-            d.provider_status, d.last_error = r.status, None if r.ok else (r.error or "")[:300]
-            if r.ok:
-                d.status, sub.last_success_at, sub.failures = "accepted", now(), 0
-                out["accepted"] += 1
-            elif r.gone:
-                d.status, sub.active, sub.revoked_reason, sub.last_failure_at = "dead", False, (r.error or "gone")[:60], now()
-                out["gone"] += 1
-            elif r.retry and d.attempts < s.notify_max_attempts:
-                d.status, d.next_attempt_at, sub.last_failure_at, sub.failures = "failed", now() + _backoff(d.attempts, r.retry_after), now(), sub.failures + 1
-                out["failed"] += 1
-            else:
-                d.status, sub.last_failure_at, sub.failures = "dead", now(), sub.failures + 1
-                out["dead"] += 1
+            target = SimpleNamespace(id=sub.id, channel=sub.channel, endpoint=sub.endpoint, p256dh=sub.p256dh, auth=sub.auth)   # a plain copy: database objects do not cross threads
+            ready.append((d.id, (d.channel, target, payload, ttl, n.priority <= 2, d.id)))
+            continue
         d.updated_at = now()
-        db.commit()  # each result is saved on its own, so a crash loses at most the one in hand
+        db.commit()
+
+    def record(did: int, r: push_senders.Result):
+        d = db.get(Delivery, did)
+        db.refresh(d)   # the device may have reported "shown" while we were still waiting on the others
+        sub = db.get(PushSubscription, d.subscription_id) if d.subscription_id else None
+        moved_on = d.status != "processing"
+        if r.ok:
+            if not moved_on:
+                d.status = "accepted"
+            if sub:
+                sub.last_success_at, sub.failures = now(), 0
+            out["accepted"] += 1
+        elif moved_on:
+            pass
+        elif r.gone:
+            d.status = "dead"
+            if sub:
+                sub.active, sub.revoked_reason, sub.last_failure_at = False, (r.error or "gone")[:60], now()
+            out["gone"] += 1
+        elif r.retry and d.attempts < s.notify_max_attempts:
+            d.status, d.next_attempt_at = "failed", now() + _backoff(d.attempts, r.retry_after)
+            if sub:
+                sub.last_failure_at, sub.failures = now(), sub.failures + 1
+            out["failed"] += 1
+        else:
+            d.status = "dead"
+            if sub:
+                sub.last_failure_at, sub.failures = now(), sub.failures + 1
+            out["dead"] += 1
+        d.provider_status, d.last_error, d.updated_at = r.status, None if r.ok else (r.error or "")[:300], now()
+        db.commit()  # saved one by one, as each answer arrives
+
+    if len(ready) == 1 or (ready and s.notify_parallel <= 1):
+        for did, job in ready:
+            record(did, _send_one(job))
+    elif ready:
+        with ThreadPoolExecutor(max_workers=min(s.notify_parallel, len(ready)), thread_name_prefix="push") as pool:
+            waiting = {pool.submit(_send_one, job): did for did, job in ready}
+            for fut in as_completed(waiting):
+                record(waiting[fut], fut.result())
     return out
 
 

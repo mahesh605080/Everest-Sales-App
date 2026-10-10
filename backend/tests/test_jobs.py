@@ -267,6 +267,7 @@ def test_deleted_files_are_purged_by_the_job(client, as_user, sql, db, file_stor
 def test_alerts_open_once_tell_the_admin_once_escalate_and_close_by_themselves(client, admin, as_user, sql, db):
     assert monitor.run(db)["firing"] == 0
     db.commit()
+    assert len(monitor.RULES) == 11
     sql("insert into platform.push_subscriptions(id, user_id, channel, endpoint, failures, active) values (900, 10, 'webpush', 'https://fcm.googleapis.com/x', 0, true)")
     nid = sql("insert into platform.notifications(id, title, category, audience, priority, status, source) values (gen_random_uuid(), 'stuck', 'general', '{}', 5, 'done', 'system') returning id").scalar()
     sql("insert into platform.deliveries(notification_id, user_id, channel, subscription_id, status, attempts, next_attempt_at) values (:n, 10, 'webpush', 900, 'queued', 0, now() - interval '20 minutes')", n=nid)
@@ -381,3 +382,58 @@ def test_the_super_admin_sees_who_is_logged_in_and_can_end_one_login(client, adm
     assert client.delete(f"{A}/sessions/{mine[0]['id']}", headers=admin).status_code == 404
     assert client.delete(f"{A}/sessions/not-an-id", headers=admin).status_code == 404
     assert not [s for s in client.get(f"{A}/sessions", headers=admin).json()["sessions"] if s["user_code"] == "SO04"]
+
+
+def test_backup_alerts_only_in_production_and_follow_what_the_scripts_recorded(client, admin, sql, db, monkeypatch):
+    from datetime import timedelta
+    stamp = lambda **ago: (datetime.now(UTC) - timedelta(**ago)).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+    put = lambda key, value: sql("insert into platform.settings(key, value, label) values (:k, :v, 'x') on conflict (key) do update set value = excluded.value", k=key, v=value)  # noqa: E731
+    sql("delete from platform.settings where key like 'backup.%'")
+    assert monitor._backup(db) is None                                  # not production: silent
+    assert client.get(f"{A}/monitor", headers=admin).json()["backup"] == {"last": None, "verified": None}
+    monkeypatch.setenv("PLATFORM_ENV", "production")
+    get_settings.cache_clear()
+    try:
+        assert monitor._backup(db)[1].startswith("No backup has been made yet")
+        put("backup.last", '{"at":"' + stamp(hours=2) + '","name":"b1","rows":10}')
+        assert "test-restored yet" in monitor._backup(db)[1]
+        put("backup.verified", '{"at":"' + stamp(hours=1) + '","name":"b1","ok":true}')
+        assert monitor._backup(db) is None                              # a fresh backup that was restored and checked: all good
+        put("backup.verified", '{"at":"' + stamp(days=10) + '","name":"b1","ok":true}')
+        assert "for 10 days" in monitor._backup(db)[1]
+        put("backup.verified", '{"at":"' + stamp(hours=1) + '","name":"b1","ok":false,"reason":"record counts differ"}')
+        sev, msg, _ = monitor._backup(db)
+        assert sev == "critical" and "record counts differ" in msg
+        put("backup.last", '{"at":"' + stamp(hours=50) + '","name":"b0"}')
+        assert monitor._backup(db)[0] == "warning" and "2 days 2 hours old" in monitor._backup(db)[1]
+        put("backup.last", '{"at":"' + stamp(days=6) + '","name":"b0"}')
+        assert monitor._backup(db)[0] == "critical"
+        put("backup.last", "not json")
+        assert monitor._backup(db)[1].startswith("No backup has been made yet")
+    finally:
+        monkeypatch.setenv("PLATFORM_ENV", "test")
+        get_settings.cache_clear()
+        sql("delete from platform.settings where key like 'backup.%'")
+
+
+def test_one_bad_schedule_or_a_vanished_job_does_not_stop_the_others(sql, db, flaky):
+    flaky["fail"] = False
+    svc.ensure_schedules(db)
+    sql("update platform.schedules set next_run_at = now() - interval '1 second', payload = '{\"keep_days\": 0}' where name = 'prune-events'")     # outside today's limits
+    sql("update platform.schedules set next_run_at = now() - interval '1 second' where name = 'prune-jobs'")
+    assert svc.schedule_due(db) == 1
+    assert sql("select last_status from platform.schedules where name = 'prune-events'").scalar() == "dead"
+    assert svc.run_one(db)["kind"] == "jobs.prune"
+    # a job whose record disappears while it runs: the outcome has nowhere to go, and nothing breaks
+    jid = svc.enqueue(db, "test.flaky")
+    db.commit()
+
+    def vanish(d, p):
+        from sqlalchemy import text
+        with session_factory()() as other:
+            other.execute(text("delete from platform.jobs where id = :i"), {"i": jid})
+            other.commit()
+        return {"n": 1}
+    svc.KINDS["test.flaky"].fn = vanish
+    assert svc.run_one(db) == {"id": jid, "kind": "test.flaky", "status": "done"}
+    assert svc.run_one(db) is None

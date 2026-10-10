@@ -4,6 +4,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger("platform")
@@ -36,6 +37,11 @@ def install(app: FastAPI):
         fields = {".".join(str(p) for p in err["loc"] if p not in ("body", "query", "path")): err["msg"] for err in e.errors()}
         first = next(iter(fields.items()), ("", "The request is not valid."))
         return JSONResponse(_body(request, f"{first[0]}: {first[1]}".strip(": "), "invalid_request", fields), status_code=422)
+
+    @app.exception_handler(DataError)
+    async def _unstorable(request: Request, e: DataError):
+        # Text the database cannot hold (a zero byte, a number out of range ...). The caller's mistake, not a fault here.
+        return JSONResponse(_body(request, "The request contains a value that cannot be stored.", "invalid_request"), status_code=422)
 
     @app.exception_handler(Exception)
     async def _crash(request: Request, e: Exception):
