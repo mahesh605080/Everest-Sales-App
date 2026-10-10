@@ -1,0 +1,18 @@
+[project]
+name = "everest-platform"
+version = "0.1.0"
+description = "Self-hosted platform services for the Everest Sales web and mobile apps"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 200
+target-version = "py311"
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101", "B008"]
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S608", "S603", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

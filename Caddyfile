@@ -1,0 +1,6 @@
+{$DOMAIN} {
+	encode gzip
+	@platform path /api/v1/* /ws /ws/*
+	reverse_proxy @platform platform:8000
+	reverse_proxy app:3000
+}

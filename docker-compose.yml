@@ -33,16 +33,42 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       TZ: Asia/Kathmandu
 
+  # Platform services in Python (sessions, realtime, files, notifications, jobs). Same database, its own schema "platform".
+  platform:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started   # the web app creates the people and roles tables the platform reads
+    environment:
+      DATABASE_URL: postgresql://sfa:${DB_PASSWORD}@db:5432/sfa
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      PLATFORM_ENV: production
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      TZ: Asia/Kathmandu
+    volumes:
+      - filedata:/data/files
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health/ready').status==200 else 1)"]
+      interval: 15s
+      retries: 10
+
   # Gives the site an https address with an automatic certificate. Point your domain's DNS at this server first.
+  # /api/v1 and /ws go to the platform service; everything else to the web app.
   caddy:
     image: caddy:2
     restart: unless-stopped
-    depends_on: [app]
+    depends_on: [app, platform]
     ports: ["80:80", "443:443"]
-    command: caddy reverse-proxy --from ${DOMAIN:?set DOMAIN in .env} --to app:3000
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
     volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
 
 volumes:
   dbdata:
   caddydata:
+  filedata:

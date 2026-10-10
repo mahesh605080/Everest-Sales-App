@@ -26,5 +26,8 @@ const nextConfig = {
   serverExternalPackages: ['pg', 'exceljs', 'bcryptjs'],
   poweredByHeader: false,
   async headers() { return [{ source: '/:path*', headers: securityHeaders }]; },
+  // Without the reverse proxy (local development) the web app passes platform calls on to the Python service itself.
+  // In production Caddy sends /api/v1 straight to it and this rule is never reached. The address is fixed when the app is built.
+  async rewrites() { return [{ source: '/api/v1/:path*', destination: `${(process.env.PLATFORM_URL || 'http://localhost:8000').replace(/\/+$/, '')}/api/v1/:path*` }]; },
 };
 export default nextConfig;
