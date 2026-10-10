@@ -48,6 +48,11 @@ export async function createReq(def: ReqDef, s: Session, body: any, ip: string |
     if (v.amount <= 0) throw new HttpError(422, 'Claim amount must be more than zero.'); v.day = today;
     v.flags = JSON.stringify(await checkClaim(v));
   }
+  if ((def.key === 'collections' || def.key === 'claims') && typeof body.client_ref === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body.client_ref)) {
+    const had = await q1<any>(`select id from ${def.table} where user_id=$1 and client_ref=$2`, [s.id, body.client_ref]);
+    if (had) return { id: had.id, duplicate: true }; // sent again after a lost connection
+    v.client_ref = body.client_ref;
+  }
   const keys = Object.keys(v);
   const row = await q1<any>(`insert into ${def.table}(user_id,${keys.map(k => `"${k}"`).join(',')}) values($1,${keys.map((_, i) => '$' + (i + 2)).join(',')}) returning id`, [s.id, ...keys.map(k => v[k])]);
   await q('insert into approvals(doc_type,doc_id,user_id,user_name,action) values($1,$2,$3,$4,$5)', [def.key, row!.id, s.id, s.name, def.steps.length ? 'Submitted' : 'Recorded']);

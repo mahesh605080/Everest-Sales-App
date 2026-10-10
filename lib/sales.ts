@@ -268,6 +268,10 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
   const cust = await customerFor(s, Number(body.customer_id)), today = await nptDate();
   const lines: any[] = (Array.isArray(body.items) ? body.items : []).filter((l: any) => Number(l.qty) > 0);
   if (!lines.length) throw new HttpError(422, 'Add at least one product with a quantity.');
+  // The mobile app gives every order its own reference, so an order re-sent after a lost connection is not booked twice.
+  const ref = typeof body.client_ref === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(body.client_ref) ? body.client_ref : null;
+  if (ref) { const had = await q1<any>('select o.id, o.no, o.value, o.over_limit, c.name as customer from sales_orders o join customers c on c.id=o.customer_id where o.user_id=$1 and o.client_ref=$2', [s.id, ref]);
+    if (had) return { id: had.id as number, no: had.no as string, value: had.value as number, over_limit: had.over_limit as boolean, dda_expired: false, customer: had.customer as string, duplicate: true }; }
   const out = await lockedFor(cust.id, async c => {
   let bk: any = null, bkItems: any[] = [];
   if (body.booklet_id) {
@@ -315,10 +319,10 @@ export async function createOrder(s: Session, body: any, ip: string | null) {
   {
     const seq = (await c.query(`select nextval('sales_order_no_seq') n`)).rows[0].n, no = `SO-${fyLabel(today)}-${String(seq).padStart(4, '0')}`;
     const o = (await c.query(
-      `insert into sales_orders(no,user_id,customer_id,booklet_id,order_date,payment_term_id,delivery_address,contact_person,contact_phone,transport,transporter,vehicle_no,remarks,value,over_limit)
-       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`,
+      `insert into sales_orders(no,user_id,customer_id,booklet_id,order_date,payment_term_id,delivery_address,contact_person,contact_phone,transport,transporter,vehicle_no,remarks,value,over_limit,client_ref)
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning id`,
       [no, s.id, cust.id, bk?.id ?? null, today, term?.id ?? cust.payment_term_id ?? null, txt(body.delivery_address, 300) ?? cust.address ?? null, txt(body.contact_person, 100) ?? cust.contact_person ?? null,
-        txt(body.contact_phone, 30) ?? cust.phone ?? null, body.transport === 'Customer' ? 'Customer' : 'Company', txt(body.transporter, 100), txt(body.vehicle_no, 30), txt(body.remarks, 500), value, over])).rows[0];
+        txt(body.contact_phone, 30) ?? cust.phone ?? null, body.transport === 'Customer' ? 'Customer' : 'Company', txt(body.transporter, 100), txt(body.vehicle_no, 30), txt(body.remarks, 500), value, over, ref])).rows[0];
     for (const i of items) await c.query('insert into sales_order_items(order_id,product_id,qty,units_per_box,rate,value,batch_id,batch_no,expiry_date,non_returnable,list_rate,scheme_id,scheme_text,free_qty,price_source) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [o.id, i.p.id, i.qty, i.p.units_per_box, i.rate, i.v, i.batch?.id ?? null, i.batch?.batch_no ?? null, i.batch?.expiry_date ?? null, !!i.batch, i.listRate, i.sch?.id ?? null, i.sch ? `${i.sch.code}: ${i.sch.text}` : null, i.free, i.source]);
     await c.query('insert into approvals(doc_type,doc_id,user_id,user_name,action,remarks) values($1,$2,$3,$4,$5,$6)', ['order', o.id, s.id, s.name, 'Submitted', over ? 'Over credit limit at submission' : null]);
     return { id: o.id as number, no, value, over_limit: over, dda_expired: credit.dda_expired as boolean, customer: cust.name as string };

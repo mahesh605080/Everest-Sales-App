@@ -76,7 +76,7 @@ These defaults were chosen while building; set them to the company's own policy 
 
 ## Checks
 
-`npm run smoke` runs 151 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
+`npm run smoke` runs 157 end-to-end checks over the real API against a database freshly loaded with `npm run seed -- --sample`.
 
 ## Run it on your own computer (for a developer)
 

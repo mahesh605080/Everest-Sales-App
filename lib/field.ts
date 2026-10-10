@@ -22,8 +22,8 @@ function pos(b: any, required = true) {
   if (!ok) { if (required) throw new HttpError(422, 'Location is needed. Allow location for this site and try again.'); return { lat: null, lng: null, acc: null }; }
   return { lat, lng, acc: Number.isFinite(acc) ? acc : null };
 }
-const ping = (uid: number, p: { lat: number | null; lng: number | null; acc: number | null }) =>
-  p.lat == null ? null : q('insert into location_pings(user_id,lat,lng,accuracy) values($1,$2,$3,$4)', [uid, p.lat, p.lng, p.acc]);
+const ping = (uid: number, p: { lat: number | null; lng: number | null; acc: number | null }, mocked = false) =>
+  p.lat == null ? null : q('insert into location_pings(user_id,lat,lng,accuracy,mocked) values($1,$2,$3,$4,$5)', [uid, p.lat, p.lng, p.acc, mocked]);
 
 export async function today(s: Session, at?: { lat?: any; lng?: any }) {
   const visits = await q<any>(`select v.*, c.name as customer, c.code as customer_code from visits v join customers c on c.id=v.customer_id where v.user_id=$1 and v.day=${TODAY} order by v.in_at`, [s.id]);
@@ -47,6 +47,8 @@ export async function visitStart(s: Session, b: any, ip: string | null) {
   if (!c) throw new HttpError(403, 'This customer is not assigned to you.');
   const radius = await setting('geo_fence_radius_m', 200);
   let dist: number | null = null, out = false, captured = false;
+  const mocked = b.mocked === true; // only the mobile app can tell; a faked position never fixes a customer's location
+  if (mocked && (c.lat == null || c.lng == null)) throw new HttpError(422, 'This customer has no saved location yet, and the phone is using a mock location. Turn mock location off and try again.');
   if (c.lat == null || c.lng == null) {
     // First visit fixes the customer's location; after that only Admin can change it.
     await q('update customers set lat=$1, lng=$2, updated_at=now(), updated_by=$3 where id=$4', [p.lat, p.lng, s.id, c.id]);
@@ -54,9 +56,12 @@ export async function visitStart(s: Session, b: any, ip: string | null) {
     dist = 0; captured = true;
   } else { dist = metres(p.lat!, p.lng!, c.lat, c.lng); out = dist > radius; }
   const row = await q1<any>(
-    `insert into visits(user_id,customer_id,day,in_lat,in_lng,in_accuracy,distance_m,out_of_fence) values($1,$2,${TODAY},$3,$4,$5,$6,$7) returning *`,
-    [s.id, c.id, p.lat, p.lng, p.acc, dist, out]);
-  await ping(s.id, p);
+    `insert into visits(user_id,customer_id,day,in_lat,in_lng,in_accuracy,distance_m,out_of_fence,mock_location,source) values($1,$2,${TODAY},$3,$4,$5,$6,$7,$8,$9) returning *`,
+    [s.id, c.id, p.lat, p.lng, p.acc, dist, out, mocked, b.source === 'app' ? 'app' : 'web']);
+  await ping(s.id, p, mocked);
+  if (mocked && (await q1<any>(`select enabled from alert_rules where key='mock_location'`))?.enabled)
+    await q(`insert into alerts(rule,severity,user_id,customer_id,message,day,key) values('mock_location','crit',$1,$2,$3,${TODAY},$4) on conflict(key) do nothing`,
+      [s.id, c.id, `Visit at ${c.name} was started with a faked (mock) GPS location on the phone.`, `mock:${row.id}`]);
   if (out && (await q1<any>(`select enabled from alert_rules where key='geofence'`))?.enabled)
     await q(`insert into alerts(rule,severity,user_id,customer_id,message,day,key) values('geofence','warn',$1,$2,$3,${TODAY},$4) on conflict(key) do nothing`,
       [s.id, c.id, `Visit at ${c.name} started ${dist} m from the saved location (limit ${radius} m).`, `geofence:${row.id}`]);

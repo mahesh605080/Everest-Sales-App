@@ -297,6 +297,25 @@ async function main() {
     ok('the demand plan is not open to a sales officer', (await so.get('/api/expiry?plan=1')).status === 403 && (await gm.get('/api/reports/demand-plan')).status === 200);
   }
 
+  // what the mobile app relies on
+  { const tk = await (await fetch(`${BASE}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'SO01', password: PW }) })).json();
+    const bearer = (m: string, p: string, b?: any) => fetch(BASE + p, { method: m, headers: { authorization: `Bearer ${tk.token}`, 'content-type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(async r => ({ status: r.status, data: await r.json() }));
+    ok('the app can work with a token instead of a cookie', tk.token && (await bearer('GET', '/api/auth/me')).data.user?.code === 'SO01');
+    const body = { customer_id: c1.id, client_ref: 'app-test-0001-abcd', items: [{ product_id: ns.id, qty: 3 }] };
+    const a1 = await bearer('POST', '/api/orders', body), a2 = await bearer('POST', '/api/orders', body);
+    ok('an order sent twice by the app is booked once', a1.status === 200 && a2.data.id === a1.data.id && a2.data.duplicate === true && a2.data.no === a1.data.no, [a1.data, a2.data]);
+    const cb = { customer_id: c1.id, mode: 'Cash', amount: 1234, client_ref: 'app-test-col-0001' };
+    const k1 = await bearer('POST', '/api/req/collections', cb), k2 = await bearer('POST', '/api/req/collections', cb);
+    ok('a collection sent twice by the app is recorded once', k1.status === 200 && k2.data.id === k1.data.id && k2.data.duplicate === true, [k1.data, k2.data]);
+    const pts = await bearer('POST', '/api/track/ping', { points: [{ lat: 27.01, lng: 84.87, accuracy: 9, at: Date.now() - 600000 }, { lat: 27.011, lng: 84.871, accuracy: 12, at: Date.now() - 300000, mocked: true }, { lat: 999, lng: 1 }] });
+    ok('background location points arrive in a batch', pts.data.saved === 2, pts.data);
+    const open = (await bearer('GET', '/api/field/today')).data.open; if (open) await bearer('POST', '/api/field/visit/end', { purpose: 'Courtesy', remarks: 'closing the open visit' });
+    const mv = await bearer('POST', '/api/field/visit/start', { customer_id: c1.id, lat: c1.lat, lng: c1.lng, accuracy: 8, mocked: true, source: 'app' });
+    ok('a visit started with a mock location is marked', mv.data.visit?.mock_location === true && mv.data.visit.source === 'app', mv.data);
+    await bearer('POST', '/api/field/visit/end', { purpose: 'Courtesy', remarks: 'mock location test visit' });
+    ok('the manager gets a mock-location alert', (await asm.get('/api/alerts')).data.alerts.some((a: any) => a.rule === 'mock_location'));
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });
