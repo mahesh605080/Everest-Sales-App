@@ -8,7 +8,7 @@ from . import logging as applog
 from .config import get_settings
 from .db import dispose
 from .middleware import Envelope
-from .routers import health
+from .routers import admin_users, auth, health
 
 API = "/api/v1"
 
@@ -26,6 +26,8 @@ def create_app() -> FastAPI:
                   docs_url=f"{API}/docs" if s.env != "production" else None, redoc_url=None, openapi_url=f"{API}/openapi.json")
     errors.install(app)
     app.include_router(health.router, prefix=API)
+    app.include_router(auth.router, prefix=API)
+    app.include_router(admin_users.router, prefix=API)
     if s.origins:
         app.add_middleware(CORSMiddleware, allow_origins=s.origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                            allow_headers=["authorization", "content-type", "x-csrf-token", "idempotency-key"], max_age=600)

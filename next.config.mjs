@@ -23,7 +23,7 @@ const securityHeaders = [
   ...(prod && process.env.COOKIE_SECURE !== 'false' ? [{ key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' }] : []),
 ];
 const nextConfig = {
-  serverExternalPackages: ['pg', 'exceljs', 'bcryptjs'],
+  serverExternalPackages: ['pg', 'exceljs', 'bcryptjs', 'hash-wasm'],
   poweredByHeader: false,
   async headers() { return [{ source: '/:path*', headers: securityHeaders }]; },
   // Without the reverse proxy (local development) the web app passes platform calls on to the Python service itself.

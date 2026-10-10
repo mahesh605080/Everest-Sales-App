@@ -13,8 +13,29 @@ const secret = () => {
   }
   return new TextEncoder().encode(s);
 };
-export const signToken = (uid: number, tv = 0) =>
-  new SignJWT({ uid, tv }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('30d').sign(secret());
+export const signToken = (uid: number, tv = 0, sid?: string | null) =>
+  new SignJWT({ uid, tv, ...(sid ? { sid } : {}) }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('30d').sign(secret());
+
+/* ---- the platform service keeps the list of logins (schema "platform"). The web app records its own logins there too,
+        so each can be seen and ended on its own. If the platform has not been installed, these quietly do nothing. ---- */
+export async function openLogin(userId: number, tv: number, ip: string | null, ua: string | null): Promise<string | null> {
+  try { return (await q1<any>(`insert into platform.sessions(id,user_id,client,token_version,ip,user_agent,expires_at) values(gen_random_uuid(),$1,'web',$2,$3,$4,now() + interval '30 days') returning id`, [userId, tv, ip, ua?.slice(0, 300) ?? null]))!.id; }
+  catch { return null; }
+}
+export async function loginEvent(outcome: string, userId: number | null, login: string | null, ip: string | null, ua: string | null, sid?: string | null) {
+  try { await q1(`insert into platform.login_events(user_id,login,outcome,session_id,ip,user_agent,detail) values($1,$2,$3,$4,$5,$6,'web')`, [userId, login?.slice(0, 80) ?? null, outcome, sid ?? null, ip, ua?.slice(0, 300) ?? null]); }
+  catch { /* platform not installed */ }
+}
+export async function closeLogin(sid: string, reason: string) {
+  try { await q1(`update platform.sessions set revoked_at=now(), revoke_reason=$2 where id=$1 and revoked_at is null`, [sid, reason]); } catch { /* platform not installed */ }
+}
+/** The login id inside the caller's token, if it has one. */
+export async function currentSid(): Promise<string | null> {
+  let tok = (await cookies()).get(COOKIE)?.value;
+  if (!tok) { const h = (await headers()).get('authorization'); if (h?.startsWith('Bearer ')) tok = h.slice(7); }
+  if (!tok) return null;
+  try { return ((await jwtVerify(tok, secret())).payload.sid as string) || null; } catch { return null; }
+}
 
 export async function getSession(): Promise<Session | null> {
   let tok = (await cookies()).get(COOKIE)?.value;
@@ -22,6 +43,8 @@ export async function getSession(): Promise<Session | null> {
   if (!tok) return null;
   try {
     const { payload } = await jwtVerify(tok, secret());
+    // A token tied to one login stops working the moment that login is ended, from either service.
+    if (payload.sid && !(await q1('select 1 from platform.sessions where id=$1 and user_id=$2 and revoked_at is null and expires_at > now()', [payload.sid, payload.uid]))) return null;
     return await q1<Session>(
       `select u.id,u.code,u.name,u.phone,u.email,u.region_id,u.area_id,u.must_change_password,
               r.key as role,r.name as role_name,r.level,r.permissions

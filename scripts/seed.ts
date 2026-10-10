@@ -2,7 +2,7 @@
  * npm run seed              -> roles, settings and the first admin (safe to run again)
  * npm run seed -- --sample  -> also loads example territories, people, products and customers
  */
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../lib/password';
 import { pool, q, q1 } from '../lib/db';
 import { ALL_PERMS } from '../lib/perm';
 
@@ -37,7 +37,7 @@ const SETTINGS: [string, string, string, string][] = [
 async function main() {
   const sample = process.argv.includes('--sample');
   const pw = process.env.DEFAULT_USER_PASSWORD || 'Everest@123';
-  const hash = await bcrypt.hash(pw, 10);
+  const hash = await hashPassword(pw);
 
   for (const [key, name, level, perms] of ROLES)
     await q('insert into roles(key,name,level,permissions) values($1,$2,$3,$4) on conflict(key) do nothing', [key, name, level, JSON.stringify(perms)]);

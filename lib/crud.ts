@@ -1,4 +1,4 @@
-import bcrypt from 'bcryptjs';
+import { hashPassword } from './password';
 import { q, q1 } from './db';
 import { ENT, Entity, Field, relInfo } from './entities';
 import { HttpError } from './auth';
@@ -106,12 +106,18 @@ export async function saveRow(ent: Entity, s: Session, id: number | null, body: 
   if (ent.key === 'customers' && 'assigned_to' in body) {
     try { assigned = coerce(ent.fields.find(f => f.key === 'assigned_to')!, body.assigned_to); } catch (e: any) { errs.assigned_to = e.message; }
   }
+  if (ent.key === 'employees' && s.level < 5) {
+    // Nobody below the Super Admin may create or change a person at or above their own level, or raise anyone to it.
+    const SUPER = 'Only the Super Admin can do this.';
+    if (id) { const cur = await q1<any>('select r.level from users u join roles r on r.id=u.role_id where u.id=$1', [id]); if (cur && (cur.level >= s.level || id === s.id)) throw new HttpError(403, id === s.id ? 'You cannot change your own account here.' : `This person is at or above your own level. ${SUPER}`); }
+    if (vals.role_id != null) { const nr = await q1<any>('select level from roles where id=$1', [vals.role_id]); if (!nr || nr.level >= s.level) throw new HttpError(403, `You can give only roles below your own level. ${SUPER}`); }
+  }
   if (ent.key === 'employees') {
     const pw = typeof body.password === 'string' ? body.password : '';
     if (pw && pw.length < 8) errs.password = 'Password must be at least 8 characters.';
     if (id && vals.manager_id === id) errs.manager_id = 'A person cannot report to themselves.';
     if (!errs.password && (pw || !id)) {
-      vals.password_hash = await bcrypt.hash(pw || defaultPassword(), 10);
+      vals.password_hash = await hashPassword(pw || defaultPassword());
       vals.must_change_password = true; vals.failed_logins = 0; vals.locked_until = null;
       if (id) vals.token_version = ((await q1<any>('select token_version from users where id=$1', [id]))?.token_version ?? 0) + 1; // signs the person out everywhere
     }

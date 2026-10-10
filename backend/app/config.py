@@ -21,6 +21,17 @@ class Settings(BaseSettings):
     statement_timeout_ms: int = Field(15000, alias="DB_STATEMENT_TIMEOUT_MS", ge=100)
     trusted_proxy: bool = Field(True, alias="TRUSTED_PROXY")  # take the client address from the reverse proxy's header
     log_level: str = Field("INFO", alias="LOG_LEVEL")
+    refresh_grace_seconds: int = Field(30, alias="REFRESH_GRACE_SECONDS", ge=0, le=300)  # a refresh whose answer was lost may be repeated this long
+    login_max_fails: int = Field(5, alias="LOGIN_MAX_FAILS", ge=3, le=20)
+    login_lock_minutes: int = Field(15, alias="LOGIN_LOCK_MINUTES", ge=1)
+    login_max_per_ip: int = Field(20, alias="LOGIN_MAX_FAILS_PER_IP", ge=5)
+    reset_minutes: int = Field(30, alias="PASSWORD_RESET_MINUTES", ge=5, le=1440)
+    public_url: str = Field("", alias="PUBLIC_URL")  # https address of the web app, used in emailed links
+    smtp_host: str = Field("", alias="SMTP_HOST")
+    smtp_port: int = Field(587, alias="SMTP_PORT")
+    smtp_user: str = Field("", alias="SMTP_USER")
+    smtp_password: str = Field("", alias="SMTP_PASSWORD")
+    smtp_from: str = Field("", alias="SMTP_FROM")
 
     @field_validator("database_url")
     @classmethod
@@ -49,6 +60,8 @@ class Settings(BaseSettings):
             out.append("AUTH_SECRET is the development default")
         elif len(self.auth_secret) < 32:
             out.append("AUTH_SECRET is shorter than 32 characters")
+        if not self.smtp_host:
+            out.append("SMTP is not configured: password reset works only through an administrator")
         if self.env != "production":
             out.append(f"PLATFORM_ENV is '{self.env}', not 'production'")
         return out

@@ -42,7 +42,7 @@ def test_production_refuses_a_weak_secret():
     with pytest.raises(ValidationError):
         Settings(PLATFORM_ENV="production", DATABASE_URL="postgresql://x/y", AUTH_SECRET="short")
     ok = Settings(PLATFORM_ENV="production", DATABASE_URL="postgres://u:p@h/db", AUTH_SECRET="a" * 40)
-    assert ok.database_url.startswith("postgresql+psycopg://") and ok.problems() == []
+    assert ok.database_url.startswith("postgresql+psycopg://") and ok.problems() == ["SMTP is not configured: password reset works only through an administrator"]
 
 
 def test_configuration_problems_never_show_the_secret():

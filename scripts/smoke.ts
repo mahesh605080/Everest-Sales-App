@@ -316,6 +316,45 @@ async function main() {
     ok('the manager gets a mock-location alert', (await asm.get('/api/alerts')).data.alerts.some((a: any) => a.rule === 'mock_location'));
   }
 
+  // the platform service (Python) and the web app share logins: either can end the other's
+  { const P = '/api/v1/auth', json = { 'content-type': 'application/json' };
+    const plat = (m: string, path: string, tok?: string, body?: any, cookie?: string) => fetch(BASE + path, { method: m, headers: { ...json, ...(tok ? { authorization: `Bearer ${tok}` } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined }).then(async r => ({ status: r.status, data: await r.json().catch(() => ({})) }));
+    ok('the platform service answers through the web address', (await plat('GET', '/api/v1/health/ready')).data.ok === true);
+    const pl = await plat('POST', `${P}/login`, undefined, { login: 'SO05', password: PW, device: { installation_id: 'smoke-phone-0001', platform: 'android', model: 'Smoke Phone' } });
+    ok('platform login accepts a password the web app hashed', pl.status === 200 && pl.data.expires_in === 900 && !!pl.data.refresh_token, pl.data);
+    const viaWeb = await fetch(`${BASE}/api/m/customers`, { headers: { authorization: `Bearer ${pl.data.access_token}` } });
+    ok("the web app's own API accepts the platform's short token", viaWeb.status === 200);
+    const a = new User('SO05'), b = new User('SO05'); await a.login(); await b.login();
+    const list = await plat('GET', `${P}/sessions`, undefined, undefined, a.cookie);
+    ok('logins made on the web are listed by the platform', list.status === 200 && list.data.sessions.filter((x: any) => x.client === 'web').length >= 2 && list.data.sessions.some((x: any) => x.device === 'Smoke Phone'), list.data);
+    const mineSid = list.data.sessions.find((x: any) => x.current).id, otherWeb = list.data.sessions.find((x: any) => x.client === 'web' && !x.current).id;
+    const del = await fetch(`${BASE}${P}/sessions/${otherWeb}`, { method: 'DELETE', headers: { cookie: a.cookie, origin: BASE } });
+    ok('ending one web login from the platform stops only that browser', del.status === 200 && (await b.get('/api/auth/me')).status === 401 && (await a.get('/api/auth/me')).status === 200, [del.status, mineSid]);
+    ok('logging out on the web ends the login itself, not just the cookie', (await a.post('/api/auth/logout')).status === 200 && (await a.get('/api/auth/me')).status === 401);
+    ok('platform logout stops the token on the web API too', (await plat('POST', `${P}/logout`, pl.data.access_token)).status === 200 && (await fetch(`${BASE}/api/m/customers`, { headers: { authorization: `Bearer ${pl.data.access_token}` } })).status === 401);
+    // a password set by the platform (Argon2id written in Python) must log in on the web, and the other way round
+    const p6 = await plat('POST', `${P}/login`, undefined, { login: 'SO06', password: PW });
+    ok('platform changes a password', (await plat('POST', `${P}/password`, p6.data.access_token, { current: PW, next: 'Crossed-Passw0rd' })).status === 200);
+    const w6 = new User('SO06');
+    ok('the web app logs in with the password the platform set', (await w6.login('Crossed-Passw0rd')) === 200 && (await new User('SO06').login(PW)) === 401);
+    ok('the web app changes it back', (await w6.post('/api/auth/password', { current: 'Crossed-Passw0rd', next: PW })).status === 200 && (await plat('POST', `${P}/login`, undefined, { login: 'SO06', password: PW })).status === 200);
+    ok('a refresh token made before the web password change is dead', (await plat('POST', `${P}/refresh`, undefined, { refresh_token: p6.data.refresh_token })).status === 401);
+    // nobody but the Super Admin may raise a person or a role to their own level
+    const boss = await plat('POST', `${P}/login`, undefined, { login: 'ADMIN', password: PW });
+    const bossPw = await plat('POST', `${P}/password`, boss.data.access_token, { current: PW, next: 'Admin-Passw0rd-1' });
+    const su = new User('ADMIN'); await su.login('Admin-Passw0rd-1');
+    const roles = (await su.get('/api/roles')).data.roles, gmRole = roles.find((r: any) => r.key === 'gm'), adminRole = roles.find((r: any) => r.key === 'admin'), soRole = roles.find((r: any) => r.key === 'so');
+    ok('the Super Admin lets the GM manage people and roles', bossPw.status === 200 && (await su.put('/api/roles', { id: gmRole.id, permissions: [...gmRole.permissions, 'employees.edit', 'roles.manage'] })).status === 200);
+    const emps = (await su.get('/api/m/employees?size=500')).data.rows, E = (c: string) => emps.find((e: any) => e.code === c);
+    ok('a GM cannot raise a person to Super Admin', (await gm.put(`/api/m/employees/${E('SO09').id}`, { role_id: adminRole.id })).status === 403);
+    ok('a GM cannot make a person a GM either', (await gm.put(`/api/m/employees/${E('SO09').id}`, { role_id: gmRole.id })).status === 403);
+    ok('a GM cannot edit the Super Admin or themselves', (await gm.put(`/api/m/employees/${E('ADMIN').id}`, { name: 'Taken Over' })).status === 403 && (await gm.put(`/api/m/employees/${E('GM01').id}`, { role_id: adminRole.id })).status === 403);
+    ok('a GM can still edit a person below them', (await gm.put(`/api/m/employees/${E('SO09').id}`, { email: 'so09@example.test' })).status === 200);
+    ok('a GM cannot change their own role or a higher one', (await gm.put('/api/roles', { id: gmRole.id, permissions: gmRole.permissions })).status === 403 && (await gm.put('/api/roles', { id: adminRole.id, permissions: [] })).status === 403);
+    ok('a GM cannot hand out a permission they do not hold', (await gm.put('/api/roles', { id: soRole.id, permissions: [...soRole.permissions, 'settings.manage'] })).status === 403 && (await gm.put('/api/roles', { id: soRole.id, permissions: soRole.permissions })).status === 200);
+    await su.put('/api/roles', { id: gmRole.id, permissions: gmRole.permissions });
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });
