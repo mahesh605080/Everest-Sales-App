@@ -38,7 +38,7 @@ def events(channel: str, since: int = Query(0, ge=0), p: Principal = Depends(cur
     return {"events": ev.replay(db, channel, since), "last_event_id": ev.last_id(db)}
 
 
-@router.get("/realtime/presence")
+@router.get("/realtime/presence", summary="Which of the given people have a live connection now")
 def presence(users: str = Query(..., max_length=2000), _: Principal = Depends(current())):
     try:
         ids = [int(x) for x in users.split(",") if x.strip()][:200]
@@ -71,7 +71,7 @@ def people(q: str = Query("", max_length=60), p: Principal = Depends(current()),
     return {"people": [{**r, "online": live.get(r["id"], False)} for r in rows]}
 
 
-@router.get("/chat/rooms")
+@router.get("/chat/rooms", summary="This person's conversations with unread counts and the last message")
 def my_rooms(p: Principal = Depends(current()), db: Session = Depends(get_db)):
     rs = chat.rooms(db, p)
     live = hub.online([m["id"] for r in rs for m in r["members"]])
@@ -84,17 +84,17 @@ def open_room(body: RoomIn, p: Principal = Depends(current()), db: Session = Dep
     return {"id": str(r.id), "kind": r.kind, "name": r.name}
 
 
-@router.get("/chat/rooms/{room_id}/messages")
+@router.get("/chat/rooms/{room_id}/messages", summary="A page of messages, newest last. Fetching them marks them delivered.")
 def messages(room_id: str, p: Principal = Depends(current()), db: Session = Depends(get_db), before: int | None = Query(None, ge=1), limit: int = Query(50, ge=1, le=100)):
     return chat.history(db, p, room_id, before, limit)
 
 
-@router.post("/chat/rooms/{room_id}/messages", status_code=201)
+@router.post("/chat/rooms/{room_id}/messages", status_code=201, summary="Send a message. A repeated client_id returns the message already stored.")
 def post_message(room_id: str, body: MessageIn, p: Principal = Depends(current()), db: Session = Depends(get_db)):
     return chat.send(db, p, room_id, body.text, body.client_id)
 
 
-@router.post("/chat/rooms/{room_id}/read")
+@router.post("/chat/rooms/{room_id}/read", summary="Mark a conversation read up to a message")
 def read(room_id: str, p: Principal = Depends(current()), db: Session = Depends(get_db), upto: int | None = None):
     chat.mark_read(db, p, room_id, upto)
     return {"ok": True}

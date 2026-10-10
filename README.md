@@ -184,6 +184,12 @@ Every screen uses the same JSON API the Android/iOS app will use. Log in with `P
 | `GET /api/stock?view=health`, `?view=transfers` | Bought vs sold, transfer suggestions |
 | `GET /api/alerts?open=1`, `POST /api/alerts/ack`, `GET/PUT /api/alerts/rules` | Alerts |
 
+## Platform service (logins, live updates, files, notifications, jobs)
+
+Beside the web app runs a second service, written in Python, in `backend/`. It provides what would otherwise be rented from Firebase or Supabase: login sessions with short tokens for the phone app, live updates and chat, private file storage, notifications with browser and iPhone push, background jobs, and a console for the Super Admin (**Platform console** in the menu). It uses the same database, in its own schema, and the same logins.
+
+Everything about it is in [`docs/platform/`](docs/platform/README.md): how the pieces fit, the developer guide, every API endpoint, what notifications can and cannot do on each kind of device, and the guide for running it.
+
 ## How the code is organised
 
 | Path | What it is |

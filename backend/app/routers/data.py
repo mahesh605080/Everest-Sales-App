@@ -74,12 +74,12 @@ def list_docs(collection: str, request: Request, p: Principal = Depends(current(
     return svc.search(db, c, p, filters, q, sort, limit, offset, mine)
 
 
-@router.post("/data/{collection}", status_code=201)
+@router.post("/data/{collection}", status_code=201, summary="Create a document. Fields are checked against the collection's declared fields.")
 def create_doc(collection: str, body: dict, p: Principal = Depends(current()), db: Session = Depends(get_db)):
     return svc.view(svc.create(db, svc.get_collection(db, collection), p, body))
 
 
-@router.get("/data/{collection}/{doc_id}")
+@router.get("/data/{collection}/{doc_id}", summary="One document")
 def get_doc(collection: str, doc_id: str, p: Principal = Depends(current()), db: Session = Depends(get_db)):
     return svc.view(svc.fetch(db, svc.get_collection(db, collection), p, doc_id))
 
@@ -89,7 +89,7 @@ def patch_doc(collection: str, doc_id: str, body: dict, p: Principal = Depends(c
     return svc.view(svc.update(db, svc.get_collection(db, collection), p, doc_id, body, if_version))
 
 
-@router.delete("/data/{collection}/{doc_id}")
+@router.delete("/data/{collection}/{doc_id}", summary="Delete a document")
 def delete_doc(collection: str, doc_id: str, p: Principal = Depends(current()), db: Session = Depends(get_db)):
     svc.delete(db, svc.get_collection(db, collection), p, doc_id)
     return {"ok": True}

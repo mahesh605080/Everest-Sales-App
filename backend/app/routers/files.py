@@ -45,13 +45,13 @@ def signed(token: str, db: Session = Depends(get_db), client: Client = Depends(c
     return _send(svc.open_link(db, token, client), inline=False)
 
 
-@router.get("/files/{file_id}")
+@router.get("/files/{file_id}", summary="A file's details (not its contents)")
 def meta(file_id: str, p: Principal = Depends(current()), db: Session = Depends(get_db)):
     f = svc.get(db, p, file_id)
     return {**svc.view(f, p), "sha256": f.sha256, "shares": svc.shares(db, f.id) if f.owner_id == p.id or p.can(svc.MANAGE) else None}
 
 
-@router.get("/files/{file_id}/download")
+@router.get("/files/{file_id}/download", summary="The file's contents. inline=true shows images and PDF in the browser.")
 def download(file_id: str, inline: bool = False, p: Principal = Depends(current()), db: Session = Depends(get_db), client: Client = Depends(client_info)):
     f = svc.get(db, p, file_id)
     svc.log(db, f.id, "downloaded", p.id, client)
@@ -69,7 +69,7 @@ def rename(file_id: str, body: RenameIn, p: Principal = Depends(current()), db: 
     return svc.view(svc.rename(db, p, file_id, body.name, body.folder, client), p)
 
 
-@router.delete("/files/{file_id}")
+@router.delete("/files/{file_id}", summary="Delete a file (owner or files.manage). Recoverable by an operator for seven days.")
 def delete(file_id: str, p: Principal = Depends(current()), db: Session = Depends(get_db), client: Client = Depends(client_info)):
     svc.remove(db, p, file_id, client)
     return {"ok": True}
@@ -95,7 +95,7 @@ def link(file_id: str, body: LinkIn, p: Principal = Depends(current()), db: Sess
     return svc.make_link(db, p, file_id, body.seconds, client)
 
 
-@router.get("/files/{file_id}/history")
+@router.get("/files/{file_id}/history", summary="Who uploaded, downloaded, shared or deleted the file")
 def history(file_id: str, p: Principal = Depends(current()), db: Session = Depends(get_db)):
     f = svc.get(db, p, file_id, write=True)
     rows = db.query(FileEvent).filter(FileEvent.file_id == f.id).order_by(FileEvent.id.desc()).limit(200).all()

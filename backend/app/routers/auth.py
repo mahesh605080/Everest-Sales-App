@@ -60,7 +60,7 @@ def refresh(body: RefreshIn, db: Session = Depends(get_db), client: Client = Dep
     return svc.refresh(db, body.refresh_token, client)
 
 
-@router.get("/me")
+@router.get("/me", summary="The person behind the token, with role and permissions")
 def me(p: Principal = Depends(current(allow_temporary_password=True))):
     return {"user": p.public(), "session_id": p.session_id}
 

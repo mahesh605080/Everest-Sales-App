@@ -361,3 +361,23 @@ def test_the_worker_starts_and_stops_cleanly(sql):
     st = worker.status()
     assert st["running"] is False and st["notify"]["passes"] > before[0]["passes"] and st["jobs"]["passes"] > before[1]["passes"] and st["notify"]["last_error"] is None and st["jobs"]["last_error"] is None
     assert sql("select count(*) from platform.schedules").scalar() == 7       # the standard schedules were made at start
+
+
+def test_the_super_admin_sees_who_is_logged_in_and_can_end_one_login(client, admin, as_user, sql):
+    from tests.helpers import auth, login
+    sql("delete from platform.rate_limits")
+    t = login(client, "SO04", device={"installation_id": "phone-so04", "platform": "android", "model": "Pixel 8"}).json()
+    h = auth(t["access_token"])
+    assert client.get("/api/v1/auth/me", headers=h).status_code == 200
+    assert client.get(f"{A}/sessions", headers=as_user("GM01")).status_code == 403
+    d = client.get(f"{A}/sessions", headers=admin).json()
+    mine = [s for s in d["sessions"] if s["user_code"] == "SO04"]
+    assert len(mine) == 1 and mine[0]["client"] == "android" and mine[0]["device"] == "Pixel 8" and d["by_client"]["android"] >= 1
+    assert "token" not in str(d).lower().replace("token_version", "")
+    assert client.delete(f"{A}/sessions/{mine[0]['id']}", headers=as_user("GM01")).status_code == 403
+    assert client.delete(f"{A}/sessions/{mine[0]['id']}", headers=admin).json() == {"ok": True}
+    assert client.get("/api/v1/auth/me", headers=h).status_code == 401                       # the token stops at once
+    assert client.post("/api/v1/auth/refresh", json={"refresh_token": t["refresh_token"]}).status_code == 401
+    assert client.delete(f"{A}/sessions/{mine[0]['id']}", headers=admin).status_code == 404
+    assert client.delete(f"{A}/sessions/not-an-id", headers=admin).status_code == 404
+    assert not [s for s in client.get(f"{A}/sessions", headers=admin).json()["sessions"] if s["user_code"] == "SO04"]

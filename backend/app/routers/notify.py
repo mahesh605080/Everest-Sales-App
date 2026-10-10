@@ -80,7 +80,7 @@ def sub_view(s: PushSubscription) -> dict:
             "last_success_at": s.last_success_at, "last_failure_at": s.last_failure_at, "failures": s.failures, "revoked_reason": s.revoked_reason, "user_id": s.user_id}
 
 
-@router.get("/push/subscriptions")
+@router.get("/push/subscriptions", summary="The devices this person has registered for push")
 def my_subscriptions(p: Principal = Depends(current()), db: Session = Depends(get_db)):
     return {"subscriptions": [sub_view(s) for s in db.scalars(select(PushSubscription).where(PushSubscription.user_id == p.id).order_by(PushSubscription.created_at.desc()))]}
 
@@ -120,12 +120,12 @@ def save_prefs(db: Session, user_id: int, body: PrefsIn) -> dict:
     return prefs_view(p)
 
 
-@router.get("/notifications/preferences")
+@router.get("/notifications/preferences", summary="This person's notification settings")
 def my_prefs(p: Principal = Depends(current()), db: Session = Depends(get_db)):
     return prefs_view(svc.prefs_of(db, p.id))
 
 
-@router.put("/notifications/preferences")
+@router.put("/notifications/preferences", summary="Set push on or off, muted kinds and quiet hours")
 def set_my_prefs(body: PrefsIn, p: Principal = Depends(current()), db: Session = Depends(get_db)):
     return save_prefs(db, p.id, body)
 
@@ -196,7 +196,7 @@ def detail(note_id: str, _: Principal = Depends(require(svc.SEND, svc.MANAGE)), 
     return {**note_view(db, n), "attempts": [dict(r) for r in rows]}
 
 
-@router.post("/notifications/{note_id}/cancel")
+@router.post("/notifications/{note_id}/cancel", summary="Cancel a scheduled notification, or withdraw the push not yet sent")
 def cancel(note_id: str, _: Principal = Depends(require(svc.SEND)), db: Session = Depends(get_db)):
     n = _note(db, note_id)
     return {"status": n.status if n.status != "scheduled" else "cancelled", "withdrawn": svc.cancel(db, n)}
@@ -213,7 +213,7 @@ def queue(_: Principal = Depends(require(svc.MANAGE)), db: Session = Depends(get
     return svc.queue_stats(db)
 
 
-@router.get("/admin/push/subscriptions")
+@router.get("/admin/push/subscriptions", summary="Every registered device, without keys or full addresses")
 def all_subscriptions(_: Principal = Depends(require(svc.MANAGE)), db: Session = Depends(get_db), user_id: int | None = None, active: bool | None = None, limit: int = Query(100, ge=1, le=500)):
     q = select(PushSubscription).order_by(PushSubscription.created_at.desc()).limit(limit)
     if user_id is not None:
@@ -223,7 +223,7 @@ def all_subscriptions(_: Principal = Depends(require(svc.MANAGE)), db: Session =
     return {"subscriptions": [sub_view(s) for s in db.scalars(q)]}
 
 
-@router.post("/admin/push/subscriptions/{sub_id}/disable")
+@router.post("/admin/push/subscriptions/{sub_id}/disable", summary="Stop push to one device")
 def disable(sub_id: int, _: Principal = Depends(require(svc.MANAGE)), db: Session = Depends(get_db)):
     s = db.get(PushSubscription, sub_id)
     if s is None:
@@ -232,11 +232,11 @@ def disable(sub_id: int, _: Principal = Depends(require(svc.MANAGE)), db: Sessio
     return {"ok": True}
 
 
-@router.get("/admin/notify/users/{user_id}/preferences")
+@router.get("/admin/notify/users/{user_id}/preferences", summary="One person's notification settings")
 def user_prefs(user_id: int, _: Principal = Depends(require(svc.MANAGE)), db: Session = Depends(get_db)):
     return prefs_view(svc.prefs_of(db, user_id))
 
 
-@router.put("/admin/notify/users/{user_id}/preferences")
+@router.put("/admin/notify/users/{user_id}/preferences", summary="Change one person's notification settings")
 def set_user_prefs(user_id: int, body: PrefsIn, _: Principal = Depends(require(svc.MANAGE)), db: Session = Depends(get_db)):
     return save_prefs(db, user_id, body)

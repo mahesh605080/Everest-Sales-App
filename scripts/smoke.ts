@@ -32,6 +32,7 @@ async function main() {
   ok('wrong password is refused', (await new User('SO01').login('wrong-password')) === 401);
   for (const u of [so, so2, asm, rsm, gm, cc]) ok(`login ${u.code}`, (await u.login()) === 200);
   if ((await admin.login()) === 200) ok('a temporary password blocks everything except changing it', (await admin.get('/api/m/regions')).status === 403);
+  if (admin.cookie) { const tmp = await admin.get('/api/v1/admin/monitor'); ok('a temporary password also blocks the platform console', tmp.status === 403 && tmp.data.code === 'password_change_required', tmp); }
   else console.log('note  ADMIN password was changed; that check is skipped');
   ok('no session is refused', (await new User('x').get('/api/m/customers')).status === 401);
 
@@ -401,6 +402,12 @@ async function main() {
     ok('the send screen and the settings open', (await gm.get('/notify')).status === 200 && (await so.get('/profile')).status === 200 && (await gm.get('/api/v1/notifications')).data.notifications.some((n: any) => n.title === title));
     const sw = await (await fetch(`${BASE}/sw.js`)).text();
     ok('the service worker handles push and taps', sw.includes("addEventListener('push'") && sw.includes("addEventListener('notificationclick'") && sw.includes('/api/v1/notifications/ack'));
+  }
+
+  // platform console: for the Super Admin only, and not before the temporary password is changed
+  { const page = await (await fetch(`${BASE}/admin`, { headers: { cookie: gm.cookie } })).text();
+    ok('the platform console is closed to everyone but the Super Admin', page.includes('No access') && (await gm.get('/api/v1/admin/monitor')).status === 403 && (await gm.get('/api/v1/admin/jobs')).status === 403 && (await gm.post('/api/v1/admin/jobs', { kind: 'events.prune' })).status === 403);
+    ok('the audit log can be searched', (await gm.get('/audit?q=booklet')).status === 200 && (await gm.get(`/audit?q=${encodeURIComponent("' or 1=1 --")}`)).status === 200);
   }
 
   // changing a password signs out every other session of that person

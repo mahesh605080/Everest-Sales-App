@@ -22,7 +22,7 @@ def target(db: Session, actor: Principal, user_id: int) -> dict:
     return dict(row)
 
 
-@router.get("/users/{user_id}/sessions")
+@router.get("/users/{user_id}/sessions", summary="Where one person is logged in")
 def user_sessions(user_id: int, actor: Principal = Depends(require("employees.edit")), db: Session = Depends(get_db)):
     target(db, actor, user_id)
     rows = db.execute(select(AuthSession, Device).outerjoin(Device, Device.id == AuthSession.device_id).where(AuthSession.user_id == user_id).order_by(AuthSession.created_at.desc()).limit(50)).all()
@@ -50,7 +50,7 @@ def suspend(user_id: int, actor: Principal = Depends(require("employees.edit")),
     return {"ok": True}
 
 
-@router.post("/users/{user_id}/activate")
+@router.post("/users/{user_id}/activate", summary="Let a suspended account be used again")
 def activate(user_id: int, actor: Principal = Depends(require("employees.edit")), db: Session = Depends(get_db), client: Client = Depends(client_info)):
     target(db, actor, user_id)
     db.execute(text("update public.users set active = true, failed_logins = 0, locked_until = null, updated_at = now(), updated_by = :by where id = :id"), {"id": user_id, "by": actor.id})

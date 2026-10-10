@@ -22,6 +22,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'roles.manage')) admin.push({ href: '/roles', label: 'Roles and permissions' });
   if (can(s, 'settings.manage')) admin.push({ href: '/settings', label: 'Settings' });
   if (can(s, 'audit.view')) admin.push({ href: '/audit', label: 'Audit log' });
+  if (s.level >= 5) admin.push({ href: '/admin', label: 'Platform console' });
   const field = [] as { href: string; label: string }[];
   if (can(s, 'field.use')) field.push({ href: '/field', label: 'My visits' });
   if (can(s, 'plan.use') || can(s, 'plan.approve')) field.push({ href: '/plan', label: 'Tour plan' });
@@ -75,6 +76,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],
+    '/admin': ['Platform console', 'Health, logins, jobs, notifications, storage and the database, in one place'],
     '/notify': ['Send notification', 'Tell people something now or at a set time, and see how far each message got'],
     '/profile': ['My account', 'Password, and how you want to be notified'],
   };

@@ -2,6 +2,7 @@
 A job can only be one of the kinds built into the code, with whole numbers inside set limits. There is no way to run a command or SQL from here."""
 import shutil
 import time as clock
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query
@@ -12,10 +13,11 @@ from sqlalchemy.orm import Session
 from .. import metrics, worker
 from ..config import get_settings
 from ..db import get_db
-from ..deps import Principal, super_admin
+from ..deps import Client, Principal, client_info, super_admin
 from ..errors import ApiError
 from ..models.jobs import Alert, Job, Schedule
 from ..realtime.hub import hub
+from ..services import auth as auth_svc
 from ..services import files as files_svc
 from ..services import jobs as svc
 from ..services import monitor
@@ -36,7 +38,7 @@ def kinds(_: Principal = Depends(super_admin)):
     return {"kinds": [{"kind": n, "label": k.label, "max_attempts": k.max_attempts, "params": {p: {"default": d, "min": lo, "max": hi} for p, (d, lo, hi) in k.params.items()}} for n, k in sorted(svc.KINDS.items())]}
 
 
-@router.get("/jobs")
+@router.get("/jobs", summary="Recent jobs, newest first, with counts by state")
 def jobs(_: Principal = Depends(super_admin), db: Session = Depends(get_db), status: str | None = Query(None, pattern="^(queued|running|done|dead|cancelled)$"), kind: str | None = Query(None, max_length=60),
          limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     q = select(Job).order_by(Job.id.desc()).limit(limit).offset(offset)
@@ -67,7 +69,7 @@ def _job(db: Session, job_id: int) -> Job:
     return j
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", summary="One job with its result or error")
 def job(job_id: int, _: Principal = Depends(super_admin), db: Session = Depends(get_db)):
     return job_view(_job(db, job_id))
 
@@ -97,7 +99,7 @@ def schedule_view(s: Schedule) -> dict:
             "enabled": s.enabled, "next_run_at": s.next_run_at, "last_run_at": s.last_run_at, "last_status": s.last_status, "last_job_id": s.last_job_id}
 
 
-@router.get("/schedules")
+@router.get("/schedules", summary="Every schedule with its next and last run")
 def schedules(_: Principal = Depends(super_admin), db: Session = Depends(get_db)):
     return {"schedules": [schedule_view(s) for s in db.scalars(select(Schedule).order_by(Schedule.name))]}
 
@@ -145,12 +147,32 @@ def run_schedule(name: str, p: Principal = Depends(super_admin), db: Session = D
     return job_view(db.get(Job, jid))
 
 
+@router.get("/sessions", summary="Who is logged in right now, on what, newest activity first")
+def sessions(_: Principal = Depends(super_admin), db: Session = Depends(get_db), limit: int = Query(200, ge=1, le=500)):
+    rows = db.execute(text("""select s.id::text as id, s.user_id, u.name as user_name, u.code as user_code, r.name as role_name, s.client, d.model as device, d.app_version, s.ip, s.user_agent, s.created_at, s.last_used_at, s.expires_at
+                                from platform.sessions s join public.users u on u.id = s.user_id join public.roles r on r.id = u.role_id left join platform.devices d on d.id = s.device_id
+                               where s.revoked_at is null and s.expires_at > now() and s.token_version = u.token_version order by s.last_used_at desc limit :l"""), {"l": limit}).mappings().all()
+    by_client = dict(db.execute(text("select s.client, count(*) from platform.sessions s join public.users u on u.id = s.user_id where s.revoked_at is null and s.expires_at > now() and s.token_version = u.token_version group by 1")).all())
+    return {"sessions": [dict(r) for r in rows], "by_client": by_client}
+
+
+@router.delete("/sessions/{session_id}", summary="End one login now. The person must log in again on that device.")
+def end_session(session_id: str, p: Principal = Depends(super_admin), db: Session = Depends(get_db), client: Client = Depends(client_info)):
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError as e:
+        raise ApiError(404, "This login does not exist.", "not_found") from e
+    if not auth_svc.end_session(db, sid, "ended_by_admin", client):
+        raise ApiError(404, "This login does not exist or has already ended.", "not_found")
+    return {"ok": True}
+
+
 def alert_view(a: Alert) -> dict:
     return {"id": a.id, "rule": a.rule, "severity": a.severity, "message": a.message, "detail": a.detail, "count": a.count, "first_seen_at": a.first_seen_at, "last_seen_at": a.last_seen_at, "resolved_at": a.resolved_at,
             "acknowledged_by": a.acknowledged_by, "acknowledged_at": a.acknowledged_at}
 
 
-@router.get("/alerts")
+@router.get("/alerts", summary="Open alerts (or all, with open_only=false) and the list of health rules")
 def alerts(_: Principal = Depends(super_admin), db: Session = Depends(get_db), open_only: bool = True, limit: int = Query(100, ge=1, le=500)):
     q = select(Alert).order_by(Alert.resolved_at.is_not(None), Alert.last_seen_at.desc()).limit(limit)
     if open_only:

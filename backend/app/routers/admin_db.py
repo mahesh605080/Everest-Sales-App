@@ -15,7 +15,7 @@ SCHEMAS = ("public", "platform")
 HIDDEN = {"password_hash", "token_hash", "p256dh", "auth", "auth_key", "endpoint", "secret", "refresh_token", "access_token", "data_bytes", "bytes"}
 
 
-@router.get("/overview")
+@router.get("/overview", summary="Database size, connections, migration state and every table with its size")
 def overview(_: Principal = Depends(super_admin), db: Session = Depends(get_db)):
     tables = db.execute(text("""
         select n.nspname as schema, c.relname as "table", greatest(c.reltuples, 0)::bigint as rows_estimate, pg_total_relation_size(c.oid) as bytes,
