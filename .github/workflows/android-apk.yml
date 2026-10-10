@@ -1,0 +1,29 @@
+# Builds an installable Android test APK on GitHub's machines, so no Android Studio is needed.
+# Run it from the Actions tab ("Run workflow"), or it runs on every push to main. The APK is under the run's "Artifacts".
+# It is signed with the debug key: fine for testing on your own phones, not for the Play Store.
+name: Android test APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: everest-sales-apk
+          path: android/app/build/outputs/apk/release/*.apk
