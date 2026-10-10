@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { ApiError, call, getBase, loadConnection, setBase, setSignedOutHandler, setToken } from './api';
+import { ApiError, call, deviceInfo, getBase, loadConnection, setBase, setSignedOutHandler, setTokens } from './api';
 import { forget } from './data';
 import { clearOutbox, loadOutbox } from './outbox';
 import { kv } from './store';
@@ -24,15 +24,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => { const me = await call<{ user: User }>('/api/auth/me'); setUser(me.user); kv.set('user', me.user); }, []);
   const signIn = useCallback(async (srv: string, login: string, password: string) => {
     await setBase(srv); setServer(getBase());
-    const r = await call<{ token: string }>('/api/auth/login', { json: { login, password } });
-    await setToken(r.token); await refreshUser();
+    const r = await call<{ access_token: string; refresh_token: string }>('/api/v1/auth/login', { json: { login, password, device: await deviceInfo() } });
+    await setTokens(r.access_token, r.refresh_token); await refreshUser();
   }, [refreshUser]);
   const signOut = useCallback(async () => {
-    try { await call('/api/auth/logout', { method: 'POST', timeout: 5000 }); } catch { /* signing out works without a connection too */ }
-    await setToken(null); await kv.del('user'); await forget(); await clearOutbox(); setUser(null);
+    try { await call('/api/v1/auth/logout', { method: 'POST', timeout: 5000 }); } catch { /* signing out works without a connection too */ }
+    await setTokens(null, null); await kv.del('user'); await forget(); await clearOutbox(); setUser(null);
   }, []);
   // Ends the session on this phone but keeps saved lists and unsent work, for logging in again as the same person.
-  const expire = useCallback(async () => { await setToken(null); setUser(null); }, []);
+  const expire = useCallback(async () => { await setTokens(null, null); setUser(null); }, []);
   const value = useMemo<Ctx>(() => ({ ready, user, server, can: p => !!user?.permissions?.includes(p), signIn, signOut, expire, refreshUser }), [ready, user, server, signIn, signOut, expire, refreshUser]);
   return <SessionCtx.Provider value={value}>{children}</SessionCtx.Provider>;
 }

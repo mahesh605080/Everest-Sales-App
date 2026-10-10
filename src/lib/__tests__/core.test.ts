@@ -1,6 +1,7 @@
 import { enqueue, flush, OutItem, refused, remove, retry, waiting } from '../outbox-core';
 import { priceLine, Pricing, Product } from '../pricing';
 import { cleanBase } from '../url';
+import { singleFlight } from '../flight';
 
 const item = (ref: string) => ({ ref, kind: 'order' as const, path: '/api/orders', body: { client_ref: ref }, title: 'Order', sub: '' });
 
@@ -43,4 +44,10 @@ describe('price on the order screen', () => {
 
 test('server address is tidied', () => {
   expect(cleanBase(' sales.example.com/ ')).toBe('https://sales.example.com'); expect(cleanBase('192.168.1.5:3000')).toBe('http://192.168.1.5:3000'); expect(cleanBase('http://localhost:3000/')).toBe('http://localhost:3000');
+});
+
+test('many callers share one token refresh', async () => {
+  let runs = 0; const go = singleFlight(async () => { runs++; await new Promise(r => setTimeout(r, 20)); return 'ok'; });
+  const all = await Promise.all([go(), go(), go()]); expect(all).toEqual(['ok', 'ok', 'ok']); expect(runs).toBe(1);
+  await go(); expect(runs).toBe(2); // a later call starts a fresh one
 });
