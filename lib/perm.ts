@@ -13,6 +13,7 @@ export const PERM_GROUPS: { group: string; perms: { key: string; label: string }
   { group: 'Distributor stock', perms: [{ key: 'stock.report', label: 'Report distributor stock' }, { key: 'stock.view', label: 'See stock reports' }] },
   { group: 'Performance', perms: [{ key: 'targets.manage', label: 'Set monthly targets' }, { key: 'scorecard.view', label: 'Control room and scorecard' }, { key: 'reports.run', label: 'Download reports' }] },
   { group: 'Platform', perms: [{ key: 'data.manage', label: 'Read and change every document in the document store' }, { key: 'chat.use', label: 'Chat with colleagues' }, { key: 'files.use', label: 'Keep and share files' }, { key: 'files.manage', label: 'See and remove every file' }] },
+  { group: 'Notifications', perms: [{ key: 'notify.send', label: 'Send a notification to chosen people' }, { key: 'notify.broadcast', label: 'Send to a whole role, area, region or everyone' }, { key: 'notify.manage', label: 'See the delivery queue and switch devices off' }] },
   { group: 'Administration', perms: [{ key: 'roles.manage', label: 'Roles and permissions' }, { key: 'settings.manage', label: 'Settings' }, { key: 'audit.view', label: 'Audit log' }] },
 ];
 export const ALL_PERMS = PERM_GROUPS.flatMap(g => g.perms.map(p => p.key));

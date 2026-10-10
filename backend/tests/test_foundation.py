@@ -17,7 +17,7 @@ def test_ready_reports_both_migration_tracks(client):
     body = r.json()
     assert r.status_code == 200, body
     assert body["database"] == "ok" and body["migrations"]["platform"]["up_to_date"] is True
-    assert body["migrations"]["web"]["last_applied"].startswith("024_")  # the web app's tables are present and untouched
+    assert body["migrations"]["web"]["last_applied"].startswith("025_")  # the web app's tables are present and untouched
 
 
 def test_every_response_has_request_id_and_security_headers(client):
@@ -42,7 +42,7 @@ def test_production_refuses_a_weak_secret():
     with pytest.raises(ValidationError):
         Settings(PLATFORM_ENV="production", DATABASE_URL="postgresql://x/y", AUTH_SECRET="short")
     ok = Settings(PLATFORM_ENV="production", DATABASE_URL="postgres://u:p@h/db", AUTH_SECRET="a" * 40)
-    assert ok.database_url.startswith("postgresql+psycopg://") and ok.problems() == ["SMTP is not configured: password reset works only through an administrator"]
+    assert ok.database_url.startswith("postgresql+psycopg://") and ok.problems() == ["VAPID keys are not set: browser push notifications are off", "SMTP is not configured: password reset works only through an administrator"]
 
 
 def test_configuration_problems_never_show_the_secret():

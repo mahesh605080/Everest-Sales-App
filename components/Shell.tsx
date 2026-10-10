@@ -4,10 +4,11 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { toast, call, initials } from '@/lib/ui';
 import { realtime } from '@/lib/realtime';
+import { disablePush, syncPush } from '@/lib/push';
 
 type Item = { href: string; label: string };
 type Group = { group: string; items: Item[] };
-const SOON = [['Android and iOS app', 'Next'], ['Samples, competitor info', 'Next'], ['Order PDF, SMS and push', 'Next']];
+const SOON = [['Android and iOS app', 'Next'], ['Samples, competitor info', 'Next'], ['Order PDF and SMS', 'Next']];
 
 export default function Shell({ user, nav, primary = [], titles, today, children }: { user: { name: string; role_name: string; must_change_password: boolean }; nav: Group[]; primary?: Item[]; titles: Record<string, [string, string]>; today?: string; children: React.ReactNode }) {
   const path = usePathname();
@@ -21,7 +22,7 @@ export default function Shell({ user, nav, primary = [], titles, today, children
     // Live: a notification or a notice shows the moment it is made, without waiting for the next check.
     realtime.start();
     const off = realtime.on(e => { if (e.event === 'notification') { load(); toast(e.payload.title); } else if (e.event === 'notice') toast(`New notice: ${e.payload.title}`); else if (e.event === 'chat.message' && e.payload.sender_id !== realtime.userId && !location.pathname.startsWith('/chat')) toast(`${e.payload.sender}: ${String(e.payload.text).slice(0, 80)}`); });
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').then(() => syncPush()).catch(() => {}); navigator.serviceWorker.addEventListener('message', e => { if (e.data?.type === 'push-resubscribe') syncPush(); }); }
     const onInstall = (e: any) => { e.preventDefault(); setInstall(e); };
     window.addEventListener('beforeinstallprompt', onInstall);
     return () => { off(); clearInterval(t); window.removeEventListener('beforeinstallprompt', onInstall); };
@@ -82,7 +83,7 @@ export default function Shell({ user, nav, primary = [], titles, today, children
     return () => { clearTimeout(t); io.disconnect(); };
   }, [path]);
 
-  async function logout() { await call('/api/auth/logout', { method: 'POST' }).catch(() => {}); window.location.href = '/login'; }
+  async function logout() { await disablePush().catch(() => {}); await call('/api/auth/logout', { method: 'POST' }).catch(() => {}); window.location.href = '/login'; }
 
   return (
     <>
@@ -122,7 +123,7 @@ export default function Shell({ user, nav, primary = [], titles, today, children
                 <button onClick={() => { setMenu(m => !m); setBell(false); }} aria-expanded={menu} aria-haspopup="menu">
                   <div className="av">{initials(user.name)}</div><div>{user.name}<br /><span className="code">{user.role_name}</span></div>
                 </button>
-                {menu && <div className="menu" role="menu">{install && <button role="menuitem" onClick={async () => { install.prompt(); setInstall(null); }}>Install as an app</button>}<Link href="/profile" role="menuitem">Change password</Link><button role="menuitem" onClick={logout}>Log out</button></div>}
+                {menu && <div className="menu" role="menu">{install && <button role="menuitem" onClick={async () => { install.prompt(); setInstall(null); }}>Install as an app</button>}<Link href="/profile" role="menuitem">Password and notifications</Link><button role="menuitem" onClick={logout}>Log out</button></div>}
               </div>
             </div>
           </div>

@@ -81,7 +81,22 @@ def send(db: Session, p: Principal, room_id: str, body, client_id=None) -> dict:
     out = message_view(m)
     for u in members(db, room.id):
         emit(db, f"user:{u}", "chat.message", {**out, "sender": p.name})
+    _push_to_those_away(db, p, room, m)
     return out
+
+
+def _push_to_those_away(db: Session, p: Principal, room, m) -> None:
+    """Members who have no live connection get a push on their registered devices, so a message is not missed while the app is closed."""
+    from ..models.notify import PushSubscription
+    from ..realtime.hub import hub
+    from . import notify
+    others = [u for u in members(db, room.id) if u != p.id]
+    live = hub.online(others)
+    away = [u for u in others if not live.get(u)]
+    if not away or not db.scalar(select(PushSubscription.id).where(PushSubscription.user_id.in_(away), PushSubscription.active).limit(1)):
+        return
+    notify.create(db, title=p.name if room.kind == "direct" or not room.name else f"{p.name} in {room.name}", body=m.body[:140], audience={"kind": "users", "ids": away}, category="chat", url="/chat",
+                  source="system", idempotency_key=f"chat:{m.id}")
 
 
 def _receipt(db: Session, room_id, user_id: int):

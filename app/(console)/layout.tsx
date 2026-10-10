@@ -31,6 +31,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   overview.push({ href: '/notices', label: 'Notices' });
   if (can(s, 'chat.use')) overview.push({ href: '/chat', label: 'Chat' });
   if (can(s, 'files.use')) overview.push({ href: '/files', label: 'Files' });
+  if (can(s, 'notify.send')) overview.push({ href: '/notify', label: 'Send notification' });
   const sales = [] as { href: string; label: string }[];
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/opportunities', label: 'Sales opportunities' });
   if (can(s, 'booklets.create') || can(s, 'booklets.approve') || can(s, 'sales.view')) sales.push({ href: '/booklets', label: 'Booklets' });
@@ -74,7 +75,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/roles': ['Roles and permissions', 'Decide what each role can see and do'],
     '/settings': ['Settings', 'Limits used by geo-fence, approvals and alerts'],
     '/audit': ['Audit log', 'Every login and every change, with who and when'],
-    '/profile': ['My account', 'Change your password'],
+    '/notify': ['Send notification', 'Tell people something now or at a set time, and see how far each message got'],
+    '/profile': ['My account', 'Password, and how you want to be notified'],
   };
   for (const d of Object.values(REQ)) titles[`/r/${d.key}`] = [d.label, d.intro];
   titles['/stock'] = ['Distributor stock', 'What each distributor holds, how fast it sells and what is near expiry'];

@@ -383,6 +383,26 @@ async function main() {
     ok('the files screen opens', (await so.get('/files')).status === 200);
   }
 
+  // notifications through the web address, with the browser's cookie
+  { const cfg = (await so.get('/api/v1/push/config')).data;
+    ok('the browser gets the push settings, never a private key', typeof cfg.webpush?.enabled === 'boolean' && !JSON.stringify(cfg).includes('private') && Array.isArray(cfg.categories), cfg);
+    const pr = await so.put('/api/v1/notifications/preferences', { push_enabled: true, muted_categories: ['stock'], quiet_from: '21:00', quiet_to: '07:00' });
+    ok('a person sets what they want to be told about', pr.status === 200 && pr.data.muted_categories[0] === 'stock' && pr.data.quiet_from === '21:00', pr);
+    const me = (await so.get('/api/auth/me')).data.user.id;
+    ok('a field officer cannot send notifications', (await so.post('/api/v1/notifications', { title: 'x', audience: { kind: 'users', ids: [me] } })).status === 403);
+    const title = `Smoke notice ${Date.now()}`;
+    const sent = await gm.post('/api/v1/notifications', { title, body: 'Depot closed tomorrow', url: '/orders', category: 'general', audience: { kind: 'users', ids: [me] } });
+    ok('a manager sends one; the result says exactly what happened', sent.status === 200 && sent.data.deliveries['inapp:stored'] === 1 && !('webpush:accepted' in sent.data.deliveries), sent);
+    const bell = (await so.get('/api/notifications')).data;
+    ok('it is under the bell of the person it was sent to', bell.items.some((n: any) => n.title === title && n.link === '/orders' && !n.read), bell.items?.[0]);
+    const muted = await gm.post('/api/v1/notifications', { title: title + ' stock', category: 'stock', audience: { kind: 'users', ids: [me] } });
+    ok('a muted kind is held back and reported as such', muted.data.deliveries?.['inapp:skipped'] === 1 && !(await so.get('/api/notifications')).data.items.some((n: any) => n.title === title + ' stock'), muted);
+    await so.put('/api/v1/notifications/preferences', { push_enabled: true, muted_categories: [] });
+    ok('the send screen and the settings open', (await gm.get('/notify')).status === 200 && (await so.get('/profile')).status === 200 && (await gm.get('/api/v1/notifications')).data.notifications.some((n: any) => n.title === title));
+    const sw = await (await fetch(`${BASE}/sw.js`)).text();
+    ok('the service worker handles push and taps', sw.includes("addEventListener('push'") && sw.includes("addEventListener('notificationclick'") && sw.includes('/api/v1/notifications/ack'));
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });

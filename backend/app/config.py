@@ -32,6 +32,22 @@ class Settings(BaseSettings):
     smtp_user: str = Field("", alias="SMTP_USER")
     smtp_password: str = Field("", alias="SMTP_PASSWORD")
     smtp_from: str = Field("", alias="SMTP_FROM")
+    # Web Push (VAPID). Make a pair with:  python -m app.cli vapid   The private key stays on the server.
+    vapid_public_key: str = Field("", alias="VAPID_PUBLIC_KEY")
+    vapid_private_key: str = Field("", alias="VAPID_PRIVATE_KEY")
+    vapid_subject: str = Field("", alias="VAPID_SUBJECT")  # mailto:someone@yourcompany or the site's https address
+    # iPhone push, directly to Apple. All four are needed, plus the key file's contents.
+    apns_key: str = Field("", alias="APNS_KEY")            # contents of the .p8 key file
+    apns_key_id: str = Field("", alias="APNS_KEY_ID")
+    apns_team_id: str = Field("", alias="APNS_TEAM_ID")
+    apns_topic: str = Field("", alias="APNS_TOPIC")        # the app's bundle id
+    apns_sandbox: bool = Field(False, alias="APNS_SANDBOX")
+    notify_max_attempts: int = Field(6, alias="NOTIFY_MAX_ATTEMPTS", ge=1, le=12)
+    notify_per_user_hour: int = Field(30, alias="NOTIFY_MAX_PER_USER_PER_HOUR", ge=1)  # more than this to one person in an hour is held back
+    notify_batch: int = Field(50, alias="NOTIFY_BATCH", ge=1, le=500)
+    # Browsers hand us the address of their vendor's push service. We only ever post to these hosts, so a made-up subscription cannot make the server call somewhere else.
+    push_hosts: str = Field("fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,notify.windows.com,push.apple.com", alias="PUSH_ENDPOINT_HOSTS")
+    worker_enabled: bool = Field(True, alias="PLATFORM_WORKER")  # run the background worker inside this process
     files_dir: str = Field("./data/files", alias="FILES_DIR")  # where uploaded files are kept; a volume in production
     file_max_bytes: int = Field(10 * 1024 * 1024, alias="FILE_MAX_BYTES", ge=1024)
     file_quota_bytes: int = Field(200 * 1024 * 1024, alias="FILE_QUOTA_BYTES", ge=1024)  # default allowance per person
@@ -54,6 +70,14 @@ class Settings(BaseSettings):
         return self
 
     @property
+    def webpush_ready(self) -> bool:
+        return bool(self.vapid_public_key and self.vapid_private_key and self.vapid_subject)
+
+    @property
+    def apns_ready(self) -> bool:
+        return bool(self.apns_key and self.apns_key_id and self.apns_team_id and self.apns_topic)
+
+    @property
     def origins(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
 
@@ -64,6 +88,8 @@ class Settings(BaseSettings):
             out.append("AUTH_SECRET is the development default")
         elif len(self.auth_secret) < 32:
             out.append("AUTH_SECRET is shorter than 32 characters")
+        if not (self.vapid_public_key and self.vapid_private_key and self.vapid_subject):
+            out.append("VAPID keys are not set: browser push notifications are off")
         if not self.smtp_host:
             out.append("SMTP is not configured: password reset works only through an administrator")
         if self.env != "production":
