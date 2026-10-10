@@ -40,7 +40,7 @@ async function main() {
   const hash = await hashPassword(pw);
 
   for (const [key, name, level, perms] of ROLES)
-    await q('insert into roles(key,name,level,permissions) values($1,$2,$3,$4) on conflict(key) do nothing', [key, name, level, JSON.stringify([...new Set([...perms, 'chat.use'])])]);
+    await q('insert into roles(key,name,level,permissions) values($1,$2,$3,$4) on conflict(key) do nothing', [key, name, level, JSON.stringify([...new Set([...perms, 'chat.use', 'files.use'])])]);
   for (const [key, value, label, unit] of SETTINGS)
     await q('insert into settings(key,value,label,unit) values($1,$2,$3,$4) on conflict(key) do nothing', [key, value, label, unit]);
   const role = async (k: string) => (await q1<any>('select id from roles where key=$1', [k]))!.id;

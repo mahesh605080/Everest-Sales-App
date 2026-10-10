@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     smtp_user: str = Field("", alias="SMTP_USER")
     smtp_password: str = Field("", alias="SMTP_PASSWORD")
     smtp_from: str = Field("", alias="SMTP_FROM")
+    files_dir: str = Field("./data/files", alias="FILES_DIR")  # where uploaded files are kept; a volume in production
+    file_max_bytes: int = Field(10 * 1024 * 1024, alias="FILE_MAX_BYTES", ge=1024)
+    file_quota_bytes: int = Field(200 * 1024 * 1024, alias="FILE_QUOTA_BYTES", ge=1024)  # default allowance per person
+    file_link_max_seconds: int = Field(3600, alias="FILE_LINK_MAX_SECONDS", ge=60, le=86400)
 
     @field_validator("database_url")
     @classmethod

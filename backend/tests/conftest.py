@@ -54,3 +54,13 @@ def as_user(client, sql):
             cache[code] = token(client, code)
         return cache[code]
     return get
+
+
+@pytest.fixture(autouse=True, scope="session")
+def file_storage(tmp_path_factory):
+    """Uploaded files go to a throw-away directory, never into the project."""
+    from app.services.storage import LocalStorage, set_storage
+    root = tmp_path_factory.mktemp("files")
+    set_storage(LocalStorage(str(root)))
+    yield root
+    set_storage(None)

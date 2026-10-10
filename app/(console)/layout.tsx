@@ -30,6 +30,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   if (can(s, 'booklets.approve') || can(s, 'credit.manage') || Object.values(REQ).some(d => d.steps.some(st => can(s, st.perm)))) overview.push({ href: '/approvals', label: 'Approvals' });
   overview.push({ href: '/notices', label: 'Notices' });
   if (can(s, 'chat.use')) overview.push({ href: '/chat', label: 'Chat' });
+  if (can(s, 'files.use')) overview.push({ href: '/files', label: 'Files' });
   const sales = [] as { href: string; label: string }[];
   if (can(s, 'orders.create') || can(s, 'sales.view')) sales.push({ href: '/opportunities', label: 'Sales opportunities' });
   if (can(s, 'booklets.create') || can(s, 'booklets.approve') || can(s, 'sales.view')) sales.push({ href: '/booklets', label: 'Booklets' });
@@ -66,6 +67,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     '/opportunities': ['Sales opportunities', 'Approved rates not yet ordered, customers who stopped ordering, distributors running low'],
     '/expiry': ['Stock and expiry', 'Which batches will not sell before they expire, who can use them in time, and at what offer'],
     '/scheme-results': ['Scheme results', 'What each scheme sold, what it cost, and whether sales really went up'],
+    '/files': ['Files', 'Keep documents and photos, private until you share them'],
     '/chat': ['Chat', 'Write to colleagues; messages arrive at once'],
     '/approvals': ['Approvals', 'Everything waiting for your decision, oldest first'],
     '/rebate': ['Yearly rebate', 'What each distributor has earned this fiscal year and how close it is to the next slab'],

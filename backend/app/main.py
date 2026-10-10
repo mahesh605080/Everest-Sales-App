@@ -10,7 +10,7 @@ from .db import dispose
 from .middleware import Envelope
 from .realtime import receipts, socket
 from .realtime.hub import hub
-from .routers import admin_db, admin_users, auth, data, health, realtime
+from .routers import admin_db, admin_users, auth, data, files, health, realtime
 
 API = "/api/v1"
 
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_db.router, prefix=API)
     app.include_router(data.router, prefix=API)
     app.include_router(realtime.router, prefix=API)
+    app.include_router(files.router, prefix=API)
     app.include_router(socket.router)
     if s.origins:
         app.add_middleware(CORSMiddleware, allow_origins=s.origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],

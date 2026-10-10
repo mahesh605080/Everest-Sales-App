@@ -369,6 +369,20 @@ async function main() {
     ok('the chat screen opens', (await so.get('/chat')).status === 200);
   }
 
+  // files through the web address, with the browser's cookie
+  { const send = async (u: User, name: string, bytes: Uint8Array | string, type = 'application/octet-stream') => { const fd = new FormData(); fd.append('file', new Blob([bytes as any], { type }), name); fd.append('folder', 'Smoke');
+      const r = await fetch(`${BASE}/api/v1/files`, { method: 'POST', headers: { cookie: u.cookie, origin: BASE }, body: fd }); return { status: r.status, data: await r.json().catch(() => ({})) }; };
+    const pdf = '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n';
+    const up = await send(so, 'rate letter.pdf', pdf, 'application/pdf');
+    ok('a file can be stored through the web address', up.status === 201 && up.data.content_type === 'application/pdf' && up.data.folder === 'Smoke', up);
+    ok('a program dressed up as a photo is refused', (await send(so, 'photo.jpg', new Uint8Array([0x4d, 0x5a, 0x90, 0, 3, 0, 0, 0]), 'image/jpeg')).status === 415);
+    const dl = await fetch(`${BASE}/api/v1/files/${up.data.id}/download`, { headers: { cookie: so.cookie } });
+    ok('the owner downloads it; another person cannot see it', dl.status === 200 && (await dl.text()) === pdf && (await so2.get(`/api/v1/files/${up.data.id}`)).status === 404);
+    const lk = (await so.post(`/api/v1/files/${up.data.id}/link`, { seconds: 120 })).data;
+    ok('a time-limited link opens it without login', (await fetch(BASE + lk.path)).status === 200 && (await fetch(BASE + lk.path.slice(0, -3) + 'AAA')).status === 404);
+    ok('the files screen opens', (await so.get('/files')).status === 200);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });
