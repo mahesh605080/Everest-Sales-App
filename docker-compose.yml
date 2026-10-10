@@ -31,6 +31,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD:-Everest@123}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      CRON_SECRET: ${CRON_SECRET:-}   # lets the platform's scheduler run the alert rules; 16+ random characters
       TZ: Asia/Kathmandu
 
   # Platform services in Python (sessions, realtime, files, notifications, jobs). Same database, its own schema "platform".
@@ -54,6 +55,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      WEB_INTERNAL_URL: http://app:3000
+      CRON_SECRET: ${CRON_SECRET:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}

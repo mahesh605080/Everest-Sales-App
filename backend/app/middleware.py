@@ -4,6 +4,8 @@ import uuid
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from . import metrics
+
 log = logging.getLogger("platform.request")
 
 SECURITY_HEADERS = [
@@ -58,8 +60,22 @@ class Envelope:
                 await self.app(scope, limited, wrapped)
             except _TooLarge:
                 await reject(413, b'{"error":"The request is too large.","code":"too_large"}')
+        ms = (time.perf_counter() - started) * 1000
+        metrics.record(scope["method"], _pattern(scope), status, ms)
         if path != "/api/v1/health":
             log.info("request", extra={"request_id": rid, "method": scope["method"], "path": path, "status": status, "ms": round((time.perf_counter() - started) * 1000, 1)})
+
+
+def _pattern(scope: Scope) -> str:
+    """The route as a pattern (/api/v1/files/{file_id}), never the raw path, so ids do not create endless rows."""
+    if scope.get("route") is None:
+        return "(no such route)"
+    parts = scope["path"].split("/")
+    for name, value in (scope.get("path_params") or {}).items():
+        v = str(value)
+        if v in parts:
+            parts[parts.index(v)] = "{" + name + "}"
+    return "/".join(parts)
 
 
 class _TooLarge(Exception):

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     notify_batch: int = Field(50, alias="NOTIFY_BATCH", ge=1, le=500)
     # Browsers hand us the address of their vendor's push service. We only ever post to these hosts, so a made-up subscription cannot make the server call somewhere else.
     push_hosts: str = Field("fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,notify.windows.com,push.apple.com", alias="PUSH_ENDPOINT_HOSTS")
+    # The web app has alert rules that need a regular nudge. With both set, the scheduler calls it; the address is never taken from a request.
+    web_internal_url: str = Field("", alias="WEB_INTERNAL_URL")  # e.g. http://app:3000 inside Docker
+    cron_secret: str = Field("", alias="CRON_SECRET")            # the same value the web app has
     worker_enabled: bool = Field(True, alias="PLATFORM_WORKER")  # run the background worker inside this process
     files_dir: str = Field("./data/files", alias="FILES_DIR")  # where uploaded files are kept; a volume in production
     file_max_bytes: int = Field(10 * 1024 * 1024, alias="FILE_MAX_BYTES", ge=1024)
@@ -80,6 +83,10 @@ class Settings(BaseSettings):
     @property
     def origins(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def web_cron_ready(self) -> bool:
+        return bool(self.web_internal_url.startswith(("http://", "https://")) and len(self.cron_secret) >= 16)
 
     def problems(self) -> list[str]:
         """Configuration that works but should be fixed. Shown to the Super Admin; never includes the values themselves."""
