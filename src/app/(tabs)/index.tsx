@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { call } from '@/lib/api';
 import { useData } from '@/lib/data';
 import { appRoute } from '@/lib/links';
 import { rs, short, when } from '@/lib/format';
 import { useOutbox } from '@/lib/outbox';
+import { realtime } from '@/lib/realtime';
 import { useSession } from '@/lib/session';
 import { Button, Card, Choice, Empty, ErrorBox, H2, Loading, Num, Pill, Row, Screen, Spread, Stale, Sub, done, tap } from '@/ui/kit';
 import { C, R, S, T } from '@/theme';
@@ -22,6 +23,8 @@ export default function Today() {
   const [ask, setAsk] = useState<string | null>(null); const [why, setWhy] = useState(''); const [err, setErr] = useState(''); const [all, setAll] = useState(false);
   const reload = useCallback(() => { pulse.refresh(); acts.refresh(); day.refresh(); }, [pulse.refresh, acts.refresh, day.refresh]); // eslint-disable-line react-hooks/exhaustive-deps
   useFocusEffect(useCallback(() => { reload(); }, [])); // eslint-disable-line react-hooks/exhaustive-deps
+  const [flash, setFlash] = useState('');
+  useEffect(() => realtime.on(e => { if (e.event === 'notification') { setFlash(e.payload.title); reload(); } else if (e.event === 'notice') setFlash(`New notice: ${e.payload.title}`); }), []); // eslint-disable-line react-hooks/exhaustive-deps
   async function answer(key: string, outcome: 'done' | 'later' | 'no', reason?: string) {
     setErr(''); try { await call('/api/sales/actions', { json: { key, outcome, reason } }); done(); setAsk(null); setWhy(''); acts.refresh(); } catch (e: any) { setErr(e?.message ?? 'Could not save.'); }
   }
@@ -29,6 +32,7 @@ export default function Today() {
   return <Screen onRefresh={reload} refreshing={pulse.loading && !!pulse.data}>
     <View style={{ gap: 2 }}><Text style={T.h1}>Namaste, {user?.name?.split(' ')[0]}</Text><Sub>{user?.role_name}{day.data?.visits?.length ? ` · ${day.data.visits.length} ${day.data.visits.length === 1 ? 'visit' : 'visits'} today` : ''}</Sub></View>
     <Stale show={pulse.stale || acts.stale} at={pulse.at || acts.at} />
+    {flash ? <Card tone="good" onPress={() => { setFlash(''); router.push('/notifications'); }}><Row><Ionicons name="notifications" size={18} color={C.good} /><Text style={[T.body, { fontWeight: '700', flex: 1 }]}>{flash}</Text></Row></Card> : null}
     {out.length > 0 && <Card tone="warn" onPress={() => router.push('/outbox')}><Spread><Row><Ionicons name="cloud-upload-outline" size={20} color={C.warn} /><Text style={[T.body, { fontWeight: '700' }]}>{out.length} waiting to send</Text></Row><Ionicons name="chevron-forward" size={18} color={C.faint} /></Spread><Sub>Saved on this phone. They go to the office when there is a connection.</Sub></Card>}
     {day.data?.open && <Card tone="good" onPress={() => router.push('/visit')}><Spread><View style={{ flex: 1 }}><Pill tone="good">Visit in progress</Pill><Text style={[T.h2, { marginTop: 6 }]}>{day.data.open.customer}</Text><Sub>since {when(day.data.open.in_at)} · tap to check out</Sub></View><Ionicons name="chevron-forward" size={20} color={C.faint} /></Spread></Card>}
 

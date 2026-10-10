@@ -6,6 +6,7 @@ import { ActivityIndicator, AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { sendRoute } from '@/lib/location';
 import { sync } from '@/lib/outbox';
+import { realtime } from '@/lib/realtime';
 import { SessionProvider, useSession } from '@/lib/session';
 import { C } from '@/theme';
 
@@ -19,7 +20,8 @@ function Gate() {
   }, [ready, user, seg, router]);
   // Whatever was done without a connection is sent as soon as the phone is online again, or the app is opened.
   useEffect(() => {
-    if (!user) return; const go = () => { sync().catch(() => {}); sendRoute().catch(() => {}); };
+    if (!user) { realtime.stop(); return; } const go = () => { sync().catch(() => {}); sendRoute().catch(() => {}); realtime.wake(); };
+    if (!user.must_change_password) realtime.start();
     const net = NetInfo.addEventListener(s => { if (s.isConnected) go(); });
     const app = AppState.addEventListener('change', s => { if (s === 'active') go(); });
     go(); return () => { net(); app.remove(); };
@@ -38,6 +40,8 @@ function Gate() {
     <Stack.Screen name="offers" options={{ title: 'Near-expiry offers' }} />
     <Stack.Screen name="outbox" options={{ title: 'Waiting to send' }} />
     <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+    <Stack.Screen name="chat/index" options={{ title: 'Chat' }} />
+    <Stack.Screen name="chat/[id]" options={{ title: 'Conversation' }} />
   </Stack>;
 }
 export default function Root() {

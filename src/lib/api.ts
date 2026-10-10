@@ -46,6 +46,9 @@ const refreshOnce = singleFlight(async (): Promise<'ok' | 'offline' | 'ended'> =
     const d = await res.json(); await setTokens(d.access_token, d.refresh_token); return 'ok';
   } catch { return 'offline'; }
 });
+export const accessToken = () => token;
+/** Gets a fresh access token now. Used by the live connection when the server says its token has run out. */
+export const refreshNow = () => refreshOnce();
 const NO_REFRESH = ['/api/v1/auth/login', '/api/v1/auth/refresh', '/api/v1/auth/password/reset'];
 
 async function send(path: string, opts: { method?: string; json?: any; timeout?: number }) {

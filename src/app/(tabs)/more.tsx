@@ -20,8 +20,9 @@ function Item({ icon, title, sub, badge, onPress }: { icon: keyof typeof Ionicon
 export default function More() {
   const { user, can, signOut, server } = useSession(); const router = useRouter(); const out = useOutbox();
   const notes = useData<{ unread: number }>('/api/notifications');
+  const chats = useData<{ rooms: any[] }>(can('chat.use') ? '/api/v1/chat/rooms' : null);
   const [duty, setDuty] = useState(false); const [err, setErr] = useState('');
-  useFocusEffect(useCallback(() => { dutyOn().then(setDuty); notes.refresh(); }, [])); // eslint-disable-line react-hooks/exhaustive-deps
+  useFocusEffect(useCallback(() => { dutyOn().then(setDuty); notes.refresh(); chats.refresh(); }, [])); // eslint-disable-line react-hooks/exhaustive-deps
   async function toggle(v: boolean) { setErr(''); try { if (v) await startDuty(); else await stopDuty(); setDuty(await dutyOn()); } catch (e: any) { setErr(e?.message ?? 'Could not change route recording.'); setDuty(await dutyOn()); } }
   function leave() {
     const text = out.length ? `${out.length} ${out.length === 1 ? 'item is' : 'items are'} still waiting to be sent and will be deleted from this phone.` : 'You will need your password to log in again.';
@@ -35,6 +36,7 @@ export default function More() {
 
     <Card style={{ gap: 0 }}>
       <Item icon="cloud-upload-outline" title="Waiting to send" sub="Orders and entries saved without a connection" badge={out.length || undefined} onPress={() => router.push('/outbox')} /><Line />
+      {can('chat.use') && <><Item icon="chatbubbles-outline" title="Chat" sub="Write to colleagues" badge={chats.data?.rooms.reduce((n: number, r: any) => n + r.unread, 0) || undefined} onPress={() => router.push('/chat' as any)} /><Line /></>}
       <Item icon="notifications-outline" title="Notifications" badge={notes.data?.unread || undefined} onPress={() => router.push('/notifications')} />
       {can('inventory.view') && <><Line /><Item icon="pricetags-outline" title="Near-expiry offers" sub="Lots your customers can use in time" onPress={() => router.push('/offers')} /></>}
       {can('collections.create') && <><Line /><Item icon="cash-outline" title="Record a collection" onPress={() => router.push('/collection')} /></>}
