@@ -16,3 +16,4 @@ ignore = ["S101", "B008", "E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+timeout = 30

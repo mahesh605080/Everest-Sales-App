@@ -5,7 +5,15 @@ export async function notify(userIds: (number | null | undefined)[], title: stri
   const ids = [...new Set(userIds.filter((x): x is number => Number.isInteger(x)))];
   if (!ids.length) return;
   try { await q('insert into notifications(user_id,title,body,link) select unnest($1::int[]), $2, $3, $4', [ids, title.slice(0, 150), body?.slice(0, 400) ?? null, link]); }
-  catch (e) { console.error('notify failed', e); }
+  catch (e) { console.error('notify failed', e); return; }
+  for (const id of ids) await emit(`user:${id}`, 'notification', { title: title.slice(0, 150), body: body?.slice(0, 200) ?? null, link }); // the bell updates at once
+}
+/**
+ * Tells live screens that something changed, through the platform service's event log. The row is committed with the caller's work;
+ * if the platform has not been installed there is no table and nothing happens.
+ */
+export async function emit(channel: string, type: string, payload: Record<string, any> = {}) {
+  try { await q('insert into platform.events(channel,type,payload) values($1,$2,$3)', [channel, type, JSON.stringify(payload)]); } catch { /* platform not installed */ }
 }
 /** People holding a role in the creator's territory: the ASM of the area, the RSM of the region, every GM. */
 export async function roleInTerritory(roleKey: string, ofUserId: number) {

@@ -2,7 +2,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { call, initials } from '@/lib/ui';
+import { toast, call, initials } from '@/lib/ui';
+import { realtime } from '@/lib/realtime';
 
 type Item = { href: string; label: string };
 type Group = { group: string; items: Item[] };
@@ -17,10 +18,13 @@ export default function Shell({ user, nav, primary = [], titles, today, children
   useEffect(() => {
     const load = () => call('/api/notifications').then(setNotes).catch(() => {});
     load(); const t = setInterval(load, 60000);
+    // Live: a notification or a notice shows the moment it is made, without waiting for the next check.
+    realtime.start();
+    const off = realtime.on(e => { if (e.event === 'notification') { load(); toast(e.payload.title); } else if (e.event === 'notice') toast(`New notice: ${e.payload.title}`); else if (e.event === 'chat.message' && e.payload.sender_id !== realtime.userId && !location.pathname.startsWith('/chat')) toast(`${e.payload.sender}: ${String(e.payload.text).slice(0, 80)}`); });
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
     const onInstall = (e: any) => { e.preventDefault(); setInstall(e); };
     window.addEventListener('beforeinstallprompt', onInstall);
-    return () => { clearInterval(t); window.removeEventListener('beforeinstallprompt', onInstall); };
+    return () => { off(); clearInterval(t); window.removeEventListener('beforeinstallprompt', onInstall); };
   }, []);
   async function openNote(n: any) { if (!n.read) await call('/api/notifications', { method: 'POST', json: { id: n.id } }).catch(() => {}); window.location.href = n.link || '/dashboard'; }
   async function readAll() { await call('/api/notifications', { method: 'POST', json: { id: 'all' } }).catch(() => {}); setNotes(n => ({ unread: 0, items: n.items.map(i => ({ ...i, read: true })) })); }

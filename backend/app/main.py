@@ -8,7 +8,9 @@ from . import logging as applog
 from .config import get_settings
 from .db import dispose
 from .middleware import Envelope
-from .routers import admin_db, admin_users, auth, data, health
+from .realtime import receipts, socket
+from .realtime.hub import hub
+from .routers import admin_db, admin_users, auth, data, health, realtime
 
 API = "/api/v1"
 
@@ -19,7 +21,10 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        receipts.install()
+        await hub.start()   # listens for committed events and forwards them to live connections
         yield
+        await hub.stop()
         dispose()  # close database connections cleanly on shutdown
 
     app = FastAPI(title="Everest platform", version="0.1.0", lifespan=lifespan,
@@ -30,6 +35,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_users.router, prefix=API)
     app.include_router(admin_db.router, prefix=API)
     app.include_router(data.router, prefix=API)
+    app.include_router(realtime.router, prefix=API)
+    app.include_router(socket.router)
     if s.origins:
         app.add_middleware(CORSMiddleware, allow_origins=s.origins, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                            allow_headers=["authorization", "content-type", "x-csrf-token", "idempotency-key"], max_age=600)

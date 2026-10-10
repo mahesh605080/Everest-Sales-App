@@ -250,6 +250,11 @@ def search(db: Session, c: Collection, p: Principal, filters: dict[str, str], q:
 
 
 def _audit(db: Session, c: Collection, p: Principal, action: str, d: Document, before: dict | None):
+    if c.realtime:
+        from .events import emit
+        body = {"collection": c.name, "id": str(d.id), "action": action, "version": d.version, "owner_id": d.owner_id, "data": None if action == "delete" else d.data}
+        emit(db, f"data:{c.name}", "document." + action, body)
+        emit(db, f"user:{d.owner_id}", "document." + action, body)
     if c.audited:
         db.execute(text("insert into public.audit_logs(user_id, user_name, action, entity, entity_id, before, after) values (:u, :n, :a, :e, :i, cast(:b as jsonb), cast(:af as jsonb))"),
                    {"u": p.id, "n": p.name, "a": action, "e": f"doc:{c.name}", "i": str(d.id), "b": json.dumps(before) if before is not None else None, "af": json.dumps(d.data) if action != "delete" else None})

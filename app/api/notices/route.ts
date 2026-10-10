@@ -1,6 +1,7 @@
 import { api, clientIp, HttpError, need } from '@/lib/auth';
 import { q, q1 } from '@/lib/db';
 import { audit } from '@/lib/audit';
+import { emit } from '@/lib/notify';
 import { can } from '@/lib/perm';
 import { TODAY } from '@/lib/field';
 
@@ -24,5 +25,6 @@ export const POST = api(async req => {
   const row = await q1<any>('insert into notices(title,body,category,role_key,region_id,expires,created_by) values($1,$2,$3,$4,$5,$6,$7) returning id',
     [title.slice(0, 150), body.slice(0, 4000), String(b.category || 'General').slice(0, 40), b.role_key || null, Number(b.region_id) || null, exp, s.id]);
   await audit(s, 'create', 'notices', row!.id, null, { title }, await clientIp());
+  await emit(b.role_key ? `role:${b.role_key}` : Number(b.region_id) ? `region:${Number(b.region_id)}` : 'all', 'notice', { id: row!.id, title: title.slice(0, 150) });
   return { id: row!.id };
 });

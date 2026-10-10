@@ -355,6 +355,20 @@ async function main() {
     await su.put('/api/roles', { id: gmRole.id, permissions: gmRole.permissions });
   }
 
+  // live events: what the web app does reaches the platform's event log, and through it every open screen
+  { const meId = (await so.get('/api/auth/me')).data.user.id, ev = async (u: User, ch: string, since = 0) => (await u.get(`/api/v1/realtime/events?channel=${ch}&since=${since}`));
+    const before = (await ev(so, `user:${meId}`)).data.last_event_id;
+    const od = (await so.post('/api/orders', { customer_id: c1.id, items: [{ product_id: ns.id, qty: 2 }] })).data;
+    await cc.post(`/api/orders/${od.id}`, { action: 'approve', remarks: 'ok' });
+    const mine = (await ev(so, `user:${meId}`, before)).data.events;
+    ok('an approval made on the web becomes a live event for the person who placed the order', mine.some((e: any) => e.event === 'notification' && e.payload.title.includes(od.no)), mine);
+    ok('nobody else can read that private channel', (await ev(so2, `user:${meId}`)).status === 403 && (await ev(gm, `user:${meId}`)).status === 403);
+    const ccId = (await cc.get('/api/auth/me')).data.user.id;
+    const room = (await so.post('/api/v1/chat/rooms', { user_ids: [ccId] })).data;
+    ok('chat works through the web address', (await so.post(`/api/v1/chat/rooms/${room.id}/messages`, { text: 'Order sent, please check', client_id: 'smoke-chat-1' })).status === 201 && (await cc.get('/api/v1/chat/rooms')).data.rooms.some((r: any) => r.id === room.id && r.unread === 1) && (await so2.get(`/api/v1/chat/rooms/${room.id}/messages`)).status === 404);
+    ok('the chat screen opens', (await so.get('/chat')).status === 200);
+  }
+
   // changing a password signs out every other session of that person
   const second = new User('SO02'); await second.login();
   const ch = await fetch(`${BASE}/api/auth/password`, { method: 'POST', headers: { cookie: so2.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ current: PW, next: PW + '-new1' }) });
