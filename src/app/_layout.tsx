@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { sendRoute } from '@/lib/location';
+import { checkInbox, onNotificationTap } from '@/lib/notify';
 import { sync } from '@/lib/outbox';
 import { realtime } from '@/lib/realtime';
 import { SessionProvider, useSession } from '@/lib/session';
@@ -20,12 +21,14 @@ function Gate() {
   }, [ready, user, seg, router]);
   // Whatever was done without a connection is sent as soon as the phone is online again, or the app is opened.
   useEffect(() => {
-    if (!user) { realtime.stop(); return; } const go = () => { sync().catch(() => {}); sendRoute().catch(() => {}); realtime.wake(); };
+    if (!user) { realtime.stop(); return; } const go = () => { sync().catch(() => {}); sendRoute().catch(() => {}); realtime.wake(); checkInbox().catch(() => {}); };
     if (!user.must_change_password) realtime.start();
     const net = NetInfo.addEventListener(s => { if (s.isConnected) go(); });
     const app = AppState.addEventListener('change', s => { if (s === 'active') go(); });
-    go(); return () => { net(); app.remove(); };
-  }, [user]);
+    const live = realtime.on(e => { if (e.event === 'notification') checkInbox().catch(() => {}); }); // arrives at once while the app is open
+    const taps = onNotificationTap(route => router.push(route as any));
+    go(); return () => { net(); app.remove(); live(); taps(); };
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!ready) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg }}><ActivityIndicator color={C.accent} size="large" /></View>;
   return <Stack screenOptions={{ headerStyle: { backgroundColor: C.card }, headerTintColor: C.ink, headerTitleStyle: { fontWeight: '700' }, headerShadowVisible: false, contentStyle: { backgroundColor: C.bg }, headerBackButtonDisplayMode: 'minimal' }}>
     <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -40,6 +43,7 @@ function Gate() {
     <Stack.Screen name="offers" options={{ title: 'Near-expiry offers' }} />
     <Stack.Screen name="outbox" options={{ title: 'Waiting to send' }} />
     <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+    <Stack.Screen name="notify-settings" options={{ title: 'Notification settings' }} />
     <Stack.Screen name="chat/index" options={{ title: 'Chat' }} />
     <Stack.Screen name="chat/[id]" options={{ title: 'Conversation' }} />
   </Stack>;

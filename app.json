@@ -12,7 +12,10 @@
       "bundleIdentifier": "com.everestparenterals.sales",
       "infoPlist": {
         "UIBackgroundModes": [
-          "location"
+          "location",
+          "fetch",
+          "processing",
+          "remote-notification"
         ]
       }
     },
@@ -30,7 +33,9 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION"
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -42,6 +47,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#1F5FD1"
+        }
+      ],
+      "expo-background-task",
       [
         "expo-location",
         {

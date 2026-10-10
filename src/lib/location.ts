@@ -1,7 +1,8 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
-import { call } from './api';
+import { call, ensureConnection } from './api';
+import { checkInbox } from './notify';
 import { kv } from './store';
 
 export type Fix = { lat: number; lng: number; accuracy: number | null; mocked: boolean; at: number };
@@ -29,7 +30,9 @@ TaskManager.defineTask(TASK, async ({ data, error }: any) => {
   const have = (await kv.get<any[]>(QUEUE)) ?? [];
   const add = (data.locations as Location.LocationObject[]).map(l => ({ lat: l.coords.latitude, lng: l.coords.longitude, accuracy: l.coords.accuracy ?? null, mocked: l.mocked === true, at: l.timestamp }));
   const all = [...have, ...add].slice(-2000); await kv.set(QUEUE, all);
+  await ensureConnection(); // this can run with the app closed, when nothing is in memory yet
   await sendRoute();
+  await checkInbox().catch(() => 0); // while on duty the phone is awake anyway: also look for new notifications
 });
 export async function sendRoute() {
   const pts = (await kv.get<any[]>(QUEUE)) ?? []; if (!pts.length) return 0;

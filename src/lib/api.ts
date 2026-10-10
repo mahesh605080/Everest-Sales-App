@@ -20,6 +20,8 @@ export async function loadConnection() {
   token = await secret.get('token'); refreshToken = await secret.get('refresh');
   return { base, token: token ?? refreshToken };
 }
+/** Background jobs start without the app's memory: read the saved server address and tokens first. */
+export async function ensureConnection() { if (!base || (!token && !refreshToken)) await loadConnection(); }
 export async function setBase(v: string) { base = cleanBase(v); await kv.set('server', base); }
 /** The short access token and the long refresh token both live in the phone's encrypted keystore, never in ordinary storage. */
 export async function setTokens(access: string | null, refresh?: string | null) {

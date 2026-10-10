@@ -42,7 +42,7 @@ export default function More() {
       {can('collections.create') && <><Line /><Item icon="cash-outline" title="Record a collection" onPress={() => router.push('/collection')} /></>}
       {can('stock.report') && <><Line /><Item icon="cube-outline" title="Report distributor stock" onPress={() => router.push('/stock')} /></>}
     </Card>
-    <Card style={{ gap: 0 }}><Item icon="key-outline" title="Change password" onPress={() => router.push('/password')} /></Card>
+    <Card style={{ gap: 0 }}><Item icon="options-outline" title="Notification settings" sub="Allow, mute kinds, quiet hours" onPress={() => router.push('/notify-settings' as any)} /><Line /><Item icon="key-outline" title="Change password" onPress={() => router.push('/password')} /></Card>
     <Button kind="danger" title="Log out" icon="log-out-outline" onPress={leave} />
     <Sub style={{ textAlign: 'center' }}>Everest Sales {Constants.expoConfig?.version ?? ''}{server ? ` · ${server.replace(/^https?:\/\//, '')}` : ''}</Sub>
   </Screen>;
